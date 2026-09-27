@@ -1,1 +1,66 @@
-# beaver_v2
+# Beaver v2
+
+Учёт счетов и прогноз баланса. Flutter (web + Android) на self-hosted Supabase.
+
+Приложение отвечает на один вопрос: **сколько денег будет к нужной дате.** Балансы
+счетов — это факт, который правит пользователь; планируемые операции — регулярные
+доходы и расходы — сам баланс не меняют никогда, они только строят прогноз.
+
+## Возможности
+
+- Счёта в разных валютах, итог в базовой валюте; тап по итогу переключает валюту
+  среди валют существующих счетов.
+- Прогноз баланса на дату: график, минимум с датой, список событий.
+- Планируемые операции: `once` / `daily` / `weekly` / `monthly` / `yearly`,
+  доход или расход, категория, необязательная привязка к счёту.
+- Сценарии «что если»: выключают часть счетов и операций, ничего не удаляя.
+- Курсы валют: автоматические (обновляются при старте и возврате в приложение,
+  если свежее значение старше 24 ч) и ручные, которые авто-обновление не трогает.
+- Переводы между счетами, в том числе межвалютные с редактируемой суммой
+  зачисления.
+
+## Запуск
+
+```bash
+cp .env.json.example .env.json          # вписать SUPABASE_ANON_KEY
+flutter pub get
+flutter run -d chrome --dart-define-from-file=.env.json
+```
+
+`.env.json` в git не попадает. Конфигурация читается через
+`String.fromEnvironment` в `lib/config/env.dart`, поэтому любой запуск и любая
+сборка требуют `--dart-define-from-file=.env.json`.
+
+## Проверка
+
+```bash
+flutter analyze
+flutter test
+```
+
+## Структура
+
+```
+lib/domain/          чистый Dart: модели и движок прогноза, без Flutter и Supabase
+  models/            Account, PlannedOp, Scenario, Rate, Currency, Money
+  projection/        occurrences, rate_table, project_balance
+  repositories/      абстракции репозиториев
+lib/data/
+  supabase/          репозитории поверх Supabase
+  in_memory/         реализации для тестов (Supabase не мокаем)
+  rates/             загрузчик курсов с двумя источниками
+lib/presentation/
+  providers/         Riverpod: AsyncNotifier на запись, чистые Provider на счёт
+  screens/           home, ops, forecast, scenarios, settings, auth
+supabase/migrations/ SQL-схема с RLS
+scripts/             apply_migration.sh, deploy_web.sh
+docs/deploy.md       деплой и правки gateway
+```
+
+Деньги везде — `int` в минорных единицах (копейки, центы). `double` допустим
+только для курсов валют.
+
+## Деплой
+
+См. [docs/deploy.md](docs/deploy.md). Коротко: `scripts/apply_migration.sh` для
+базы, `scripts/deploy_web.sh` для web-сборки в подпуть `/beaver/`.
