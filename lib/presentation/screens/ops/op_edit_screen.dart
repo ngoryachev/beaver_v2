@@ -66,9 +66,11 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime(2000),
+      // The end date can never precede the start: the database enforces
+      // `end_date >= start_date`, and a rejected write would surface only as a
+      // generic «Не удалось сохранить операцию».
+      firstDate: isStart ? DateTime(2000) : draft.startDate,
       lastDate: DateTime(2100),
-      locale: const Locale('ru'),
     );
     if (picked == null) return;
     final date = DateTime(picked.year, picked.month, picked.day);

@@ -125,7 +125,7 @@ class _TransferSheetState extends ConsumerState<TransferSheet> {
       return;
     }
     if (from.id == to.id) {
-      setState(() => _error = 'Счёта должны быть разными');
+      setState(() => _error = 'Счета должны быть разными');
       return;
     }
     final debited = Money.tryParse(

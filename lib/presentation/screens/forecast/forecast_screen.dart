@@ -51,7 +51,6 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
       initialDate: _customDate ?? addDays(today, 30),
       firstDate: today,
       lastDate: DateTime(today.year + 10),
-      locale: const Locale('ru'),
     );
     if (picked == null) return;
     setState(() {

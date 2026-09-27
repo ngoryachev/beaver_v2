@@ -117,7 +117,7 @@ class _ScenarioEditScreenState extends ConsumerState<ScenarioEditScreen> {
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
-            Text('Счёта', style: theme.textTheme.titleMedium),
+            Text('Счета', style: theme.textTheme.titleMedium),
             if (accounts.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),

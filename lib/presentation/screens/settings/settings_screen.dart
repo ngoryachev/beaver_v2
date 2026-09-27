@@ -72,7 +72,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text('Архивные счёта', style: theme.textTheme.titleMedium),
+            child: Text('Архивные счета', style: theme.textTheme.titleMedium),
           ),
           if (archived.isEmpty)
             const Padding(
@@ -101,7 +101,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text('Активные счёта', style: theme.textTheme.titleMedium),
+            child: Text('Активные счета', style: theme.textTheme.titleMedium),
           ),
           for (final account in accounts.where((a) => !a.archived))
             ListTile(
@@ -232,36 +232,50 @@ class _RatesTable extends ConsumerWidget {
     final controller = TextEditingController(
       text: current?.ratePerUsd.toString() ?? '',
     );
+    // StatefulBuilder so a rejected value can show an error in place instead of
+    // closing the dialog as though it had saved.
+    String? error;
     final value = await showDialog<double>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Курс $code'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText: 'Сколько $code за 1 USD',
-            border: const OutlineInputBorder(),
+      // `_`, not `context`: the outer one is still used for `context.mounted`
+      // after the dialog closes, and shadowing it here would be a trap.
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: Text('Курс $code'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Сколько $code за 1 USD',
+              border: const OutlineInputBorder(),
+              errorText: error,
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final parsed = double.tryParse(
+                  controller.text
+                      .replaceAll('\u00a0', '')
+                      .replaceAll(' ', '')
+                      .replaceAll(',', '.')
+                      .trim(),
+                );
+                if (parsed == null || parsed <= 0) {
+                  setDialogState(() => error = 'Введите число больше нуля');
+                  return;
+                }
+                Navigator.of(dialogContext).pop(parsed);
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final parsed = double.tryParse(
-                controller.text.trim().replaceAll(',', '.'),
-              );
-              Navigator.of(
-                dialogContext,
-              ).pop(parsed != null && parsed > 0 ? parsed : null);
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
       ),
     );
     controller.dispose();

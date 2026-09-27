@@ -1,11 +1,11 @@
 {
-    "name": "beaver_v2",
-    "short_name": "beaver_v2",
+    "name": "Beaver",
+    "short_name": "Beaver",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Учёт счетов и прогноз баланса",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

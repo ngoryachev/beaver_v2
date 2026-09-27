@@ -49,7 +49,7 @@ class ScenariosScreen extends ConsumerWidget {
                 padding: EdgeInsets.all(16),
                 child: Text(
                   'Сценарий выключает часть счетов и операций, не удаляя их. '
-                  'Новые счёта и операции попадают во все сценарии.',
+                  'Новые счета и операции попадают во все сценарии.',
                 ),
               ),
               for (final scenario in scenarios)

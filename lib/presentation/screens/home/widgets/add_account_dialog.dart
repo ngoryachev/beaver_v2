@@ -38,10 +38,9 @@ class _AddAccountDialogState extends ConsumerState<AddAccountDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final decimals = Currency.decimalsOf(_currencyCode);
-    final balance = _balanceController.text.trim().isEmpty
-        ? 0
-        : Money.tryParse(_balanceController.text, decimals: decimals)?.minor ??
-              0;
+    // The validator has already rejected anything unparseable; blank means zero.
+    final balance =
+        Money.tryParse(_balanceController.text, decimals: decimals)?.minor ?? 0;
 
     setState(() => _saving = true);
     final ok = await runWrite(
@@ -108,6 +107,16 @@ class _AddAccountDialogState extends ConsumerState<AddAccountDialog> {
                 hintText: '0',
                 border: OutlineInputBorder(),
               ),
+              validator: (value) {
+                // Blank means «start at zero»; anything unparseable is a typo
+                // and must not quietly become a zero balance.
+                if (value == null || value.trim().isEmpty) return null;
+                final parsed = Money.tryParse(
+                  value,
+                  decimals: Currency.decimalsOf(_currencyCode),
+                );
+                return parsed == null ? 'Введите сумму' : null;
+              },
             ),
           ],
         ),

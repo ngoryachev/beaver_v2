@@ -101,7 +101,7 @@ class _HomeBody extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
-              'Счёта',
+              'Счета',
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),

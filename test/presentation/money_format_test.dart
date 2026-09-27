@@ -57,6 +57,33 @@ void main() {
     });
   });
 
+  // The whole UI reads dates through these two. They are pinned because the
+  // Russian month names come from `intl`, whose constraint had to be raised to
+  // ^0.20.2 to pull in flutter_localizations.
+  group('formatDate', () {
+    test('is day.month.year, zero-padded', () {
+      expect(formatDate(DateTime(2026, 1, 5)), '05.01.2026');
+      expect(formatDate(DateTime(2026, 12, 31)), '31.12.2026');
+    });
+
+    test('ignores any time component', () {
+      expect(formatDate(DateTime(2026, 3, 21, 23, 59)), '21.03.2026');
+    });
+  });
+
+  group('formatDayMonth', () {
+    test('uses the Russian genitive month, without the year', () {
+      expect(formatDayMonth(DateTime(2026, 3, 21)), '21 марта');
+      expect(formatDayMonth(DateTime(2026, 1, 5)), '5 января');
+      expect(formatDayMonth(DateTime(2026, 9, 1)), '1 сентября');
+      expect(formatDayMonth(DateTime(2026, 12, 31)), '31 декабря');
+    });
+
+    test('does not zero-pad the day', () {
+      expect(formatDayMonth(DateTime(2026, 5, 7)), '7 мая');
+    });
+  });
+
   group('formatRate', () {
     test('trims the API noise on a large rate', () {
       expect(formatRate(84.38308093), '84,3831');
