@@ -36,9 +36,11 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
         today.month,
         daysInMonth(today.year, today.month),
       ),
-      _Preset.plus30 => today.add(const Duration(days: 30)),
-      _Preset.plus90 => today.add(const Duration(days: 90)),
-      _Preset.custom => _customDate ?? today.add(const Duration(days: 30)),
+      // Calendar days, not 24-hour durations: across a DST transition
+      // `today.add(Duration(days: 30))` lands on day 29 at 23:00.
+      _Preset.plus30 => addDays(today, 30),
+      _Preset.plus90 => addDays(today, 90),
+      _Preset.custom => _customDate ?? addDays(today, 30),
     };
   }
 
@@ -46,7 +48,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
     final today = dateOnly(DateTime.now());
     final picked = await showDatePicker(
       context: context,
-      initialDate: _customDate ?? today.add(const Duration(days: 30)),
+      initialDate: _customDate ?? addDays(today, 30),
       firstDate: today,
       lastDate: DateTime(today.year + 10),
       locale: const Locale('ru'),

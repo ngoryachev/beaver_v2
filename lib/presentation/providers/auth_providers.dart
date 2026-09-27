@@ -3,12 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'repo_providers.dart';
 
-/// Auth events straight from Supabase. The router listens to this to decide
-/// between the login screen and the app.
-final authStateChangesProvider = StreamProvider<AuthState>((ref) {
-  return ref.watch(authServiceProvider).authStateChanges;
-});
-
 /// Whether somebody is signed in right now.
 ///
 /// Reads the session synchronously — a restored session is available before the

@@ -364,6 +364,53 @@ void main() {
       expect(result.events.first.amountMinor, -1000);
     });
 
+    test('names the base currency when it is the unrated one', () {
+      // Only EUR has a rate, and the total is asked for in RUB. The conversion
+      // fails on the RUB side, so blaming EUR would send the user to the wrong
+      // row in settings.
+      final eurOnly = RateTable.fromRates([_rate('EUR', 0.9)]);
+
+      final result = projectBalance(
+        accounts: [_account(id: 'a1', currencyCode: 'EUR', balance: 10000)],
+        ops: const [],
+        from: DateTime(2026, 3, 1),
+        to: DateTime(2026, 3, 2),
+        rates: eurOnly,
+        baseCurrency: 'RUB',
+      );
+
+      expect(result.missingRateCodes, {'RUB'});
+      expect(result.startBalance, 0);
+    });
+
+    test('names both sides when neither has a rate', () {
+      final result = projectBalance(
+        accounts: [_account(id: 'a1', currencyCode: 'KZT', balance: 10000)],
+        ops: const [],
+        from: DateTime(2026, 3, 1),
+        to: DateTime(2026, 3, 2),
+        rates: RateTable.fromRates(const []),
+        baseCurrency: 'RUB',
+      );
+
+      expect(result.missingRateCodes, {'KZT', 'RUB'});
+    });
+
+    test('an operation reports the base currency too', () {
+      final eurOnly = RateTable.fromRates([_rate('EUR', 0.9)]);
+
+      final result = projectBalance(
+        accounts: const [],
+        ops: [_op(currencyCode: 'EUR', amount: 1000)],
+        from: DateTime(2026, 3, 1),
+        to: DateTime(2026, 3, 3),
+        rates: eurOnly,
+        baseCurrency: 'RUB',
+      );
+
+      expect(result.missingRateCodes, {'RUB'});
+    });
+
     test('a rate added later removes the code from missingRateCodes', () {
       final withRate = RateTable.fromRates([
         _rate('RUB', 90),

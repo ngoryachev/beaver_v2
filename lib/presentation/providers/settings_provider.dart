@@ -9,12 +9,13 @@ import 'repo_providers.dart';
 class SettingsNotifier extends AsyncNotifier<UserSettings?> {
   @override
   Future<UserSettings?> build() async {
+    // Per-user data: see [currentUserIdProvider].
+    final userId = ref.watch(currentUserIdProvider);
+    if (userId == null) return null;
+
     final repository = ref.watch(settingsRepositoryProvider);
     final stored = await repository.get();
     if (stored != null) return stored;
-
-    final userId = ref.read(currentUserIdProvider);
-    if (userId == null) return null;
     final fresh = UserSettings(userId: userId, baseCurrency: 'RUB');
     await repository.save(fresh);
     return fresh;

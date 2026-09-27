@@ -11,6 +11,10 @@ const _uuid = Uuid();
 class OpsNotifier extends AsyncNotifier<List<PlannedOp>> {
   @override
   Future<List<PlannedOp>> build() {
+    // Per-user data: see [currentUserIdProvider].
+    if (ref.watch(currentUserIdProvider) == null) {
+      return Future.value(const <PlannedOp>[]);
+    }
     return ref.watch(plannedOpsRepositoryProvider).getAll();
   }
 

@@ -410,6 +410,68 @@ void main() {
     });
   });
 
+  // These two back the DST fix in `occurrencesBetween`. The daylight-saving
+  // behaviour itself can only be exercised in a zone that has a transition (see
+  // occurrences_dst_test.dart); the calendar contract below holds everywhere,
+  // so it still guards the helpers on a UTC CI runner.
+  group('addDays', () {
+    test('rolls over into the next month', () {
+      expect(addDays(DateTime(2026, 1, 31), 1), DateTime(2026, 2, 1));
+    });
+
+    test('rolls over into the next year', () {
+      expect(addDays(DateTime(2026, 12, 31), 1), DateTime(2027, 1, 1));
+    });
+
+    test('goes backwards', () {
+      expect(addDays(DateTime(2026, 3, 1), -1), DateTime(2026, 2, 28));
+      expect(addDays(DateTime(2028, 3, 1), -1), DateTime(2028, 2, 29));
+    });
+
+    test('adding zero is the identity', () {
+      expect(addDays(DateTime(2026, 6, 15), 0), DateTime(2026, 6, 15));
+    });
+
+    test('lands on midnight even from a date carrying a time', () {
+      expect(addDays(DateTime(2026, 6, 15, 23, 59), 1), DateTime(2026, 6, 16));
+    });
+
+    test('crosses a leap day', () {
+      expect(addDays(DateTime(2028, 2, 28), 1), DateTime(2028, 2, 29));
+      expect(addDays(DateTime(2026, 2, 28), 1), DateTime(2026, 3, 1));
+    });
+  });
+
+  group('daysBetween', () {
+    test('counts whole calendar days forward', () {
+      expect(daysBetween(DateTime(2026, 3, 1), DateTime(2026, 3, 8)), 7);
+    });
+
+    test('is zero for the same day and negative going back', () {
+      expect(daysBetween(DateTime(2026, 3, 1), DateTime(2026, 3, 1)), 0);
+      expect(daysBetween(DateTime(2026, 3, 8), DateTime(2026, 3, 1)), -7);
+    });
+
+    test('ignores the time of day on either end', () {
+      expect(
+        daysBetween(DateTime(2026, 3, 1, 23, 59), DateTime(2026, 3, 2, 0, 1)),
+        1,
+      );
+    });
+
+    test('spans a month and a leap year correctly', () {
+      expect(daysBetween(DateTime(2026, 1, 31), DateTime(2026, 3, 1)), 29);
+      expect(daysBetween(DateTime(2028, 1, 31), DateTime(2028, 3, 1)), 30);
+    });
+
+    test('is the inverse of addDays', () {
+      final start = DateTime(2026, 5, 20);
+      for (final offset in const [1, 7, 30, 365, -14]) {
+        expect(daysBetween(start, addDays(start, offset)), offset);
+      }
+    });
+  });
+
   group('daysInMonth', () {
     test('handles February in leap and common years', () {
       expect(daysInMonth(2026, 2), 28);

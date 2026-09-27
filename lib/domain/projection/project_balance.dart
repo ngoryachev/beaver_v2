@@ -54,6 +54,10 @@ class ProjectionResult {
   /// Currency codes that appear in the input but have no usable rate. Amounts
   /// in those currencies are excluded from the totals rather than counted as 0,
   /// so the UI can warn instead of quietly lying.
+  ///
+  /// A conversion needs a rate on both sides, so this names whichever side is
+  /// actually missing: if the *base* currency is the unrated one, blaming every
+  /// other currency would point the user at the wrong row in settings.
   final Set<String> missingRateCodes;
 
   const ProjectionResult({
@@ -95,7 +99,7 @@ ProjectionResult projectBalance({
       to: base,
     );
     if (converted == null) {
-      missing.add(account.currencyCode.toUpperCase());
+      missing.addAll(rates.missing([account.currencyCode, base]));
       continue;
     }
     startBalance += converted;
@@ -115,7 +119,9 @@ ProjectionResult projectBalance({
       from: op.currencyCode,
       to: base,
     );
-    if (converted == null) missing.add(op.currencyCode.toUpperCase());
+    if (converted == null) {
+      missing.addAll(rates.missing([op.currencyCode, base]));
+    }
 
     for (final date in dates) {
       events.add(

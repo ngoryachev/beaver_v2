@@ -25,10 +25,29 @@ final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService(ref.watch(supabaseClientProvider));
 });
 
-/// Id of the signed-in user. Overridden in tests so repositories and settings can
-/// be built without an auth session.
+/// Auth events straight from Supabase. Lives here, next to [authServiceProvider],
+/// so [currentUserIdProvider] can depend on it without importing the auth
+/// controller back.
+final authStateChangesProvider = StreamProvider<AuthState>((ref) {
+  return ref.watch(authServiceProvider).authStateChanges;
+});
+
+/// Id of the signed-in user, `null` when signed out. Overridden in tests so
+/// repositories and settings can be built without an auth session.
+///
+/// Watches the auth stream: the [AuthService] instance never changes, so without
+/// that the id would stay whoever signed in first.
+///
+/// Every provider holding per-user data watches this and bails out on `null`.
+/// That gives two things: signing in as somebody else refetches instead of
+/// leaving the previous user's rows on screen, and signed out nothing calls a
+/// repository — the Supabase ones dereference `auth.currentUser!`. Re-reading it
+/// for the same user returns an equal `String`, so a token refresh does not
+/// trigger a reload.
 final currentUserIdProvider = Provider<String?>((ref) {
-  return ref.watch(authServiceProvider).currentUser?.id;
+  final authService = ref.watch(authServiceProvider);
+  ref.watch(authStateChangesProvider);
+  return authService.currentUser?.id;
 });
 
 final accountsRepositoryProvider = Provider<AccountsRepository>((ref) {

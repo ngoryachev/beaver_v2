@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../domain/models/account.dart';
+import '../../../domain/projection/occurrences.dart';
 import '../../../router.dart';
 import '../../format/money_format.dart';
 import '../../providers/accounts_provider.dart';
@@ -16,8 +17,8 @@ import 'transfer_sheet.dart';
 import 'widgets/account_card.dart';
 import 'widgets/add_account_dialog.dart';
 
-/// How far ahead the home screen's forecast widget looks.
-const homeForecastHorizon = Duration(days: 30);
+/// How far ahead the home screen's forecast widget looks, in calendar days.
+const homeForecastDays = 30;
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -224,7 +225,11 @@ class _ForecastPreviewCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final baseCurrency = ref.watch(baseCurrencyProvider);
-    final target = DateTime.now().add(homeForecastHorizon);
+    // Keyed by a calendar date, not a timestamp: `projectionProvider` is a
+    // family whose cache is keyed by the argument, so a raw `DateTime.now()`
+    // would leave one dead projection behind on every rebuild. Calendar
+    // arithmetic, so the horizon is still 30 days across a DST transition.
+    final target = addDays(dateOnly(DateTime.now()), homeForecastDays);
     final projection = ref.watch(projectionProvider(target));
     final goesNegative = projection.minBalance < 0;
 

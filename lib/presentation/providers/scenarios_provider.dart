@@ -16,12 +16,13 @@ const defaultScenarioName = 'Все';
 class ScenariosNotifier extends AsyncNotifier<List<Scenario>> {
   @override
   Future<List<Scenario>> build() async {
+    // Per-user data: see [currentUserIdProvider].
+    final userId = ref.watch(currentUserIdProvider);
+    if (userId == null) return const [];
+
     final repository = ref.watch(scenariosRepositoryProvider);
     final scenarios = await repository.getAll();
     if (scenarios.any((scenario) => scenario.isDefault)) return scenarios;
-
-    final userId = ref.read(currentUserIdProvider);
-    if (userId == null) return scenarios;
 
     final fallback = Scenario(
       id: _uuid.v4(),

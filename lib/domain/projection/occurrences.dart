@@ -8,6 +8,25 @@ DateTime dateOnly(DateTime value) =>
 /// Number of days in [month] of [year].
 int daysInMonth(int year, int month) => DateTime(year, month + 1, 0).day;
 
+/// [date] shifted by [days] calendar days, staying at local midnight.
+///
+/// Never use `Duration(days: n)` for this: a duration is exactly 24 h, but a
+/// local day is 23 h or 25 h across a daylight-saving transition, so adding one
+/// lands at 01:00 or 23:00 instead of midnight. The `DateTime` constructor
+/// normalises an out-of-range day, which is what makes this calendar-correct.
+DateTime addDays(DateTime date, int days) =>
+    DateTime(date.year, date.month, date.day + days);
+
+/// Whole calendar days from [from] to [to], ignoring any time component.
+///
+/// Reinterpreted in UTC so a 23- or 25-hour local day still counts as one day —
+/// `to.difference(from).inDays` is off by one across a DST transition.
+int daysBetween(DateTime from, DateTime to) => DateTime.utc(
+  to.year,
+  to.month,
+  to.day,
+).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+
 /// Every date in `[from, to]` (inclusive, date-only) on which [op] fires.
 ///
 /// Occurrences are anchored at `op.startDate`, so a monthly operation that
@@ -36,19 +55,19 @@ List<DateTime> occurrencesBetween(PlannedOp op, DateTime from, DateTime to) {
       var cursor = start.isBefore(windowFrom) ? windowFrom : start;
       while (!cursor.isAfter(end)) {
         result.add(cursor);
-        cursor = cursor.add(const Duration(days: 1));
+        cursor = addDays(cursor, 1);
       }
     case Schedule.weekly:
       // Align to the first on-cycle day at or after the window start.
       var cursor = start;
       if (cursor.isBefore(windowFrom)) {
-        final elapsed = windowFrom.difference(cursor).inDays;
+        final elapsed = daysBetween(start, windowFrom);
         final periods = (elapsed / 7).ceil();
-        cursor = _addDays(start, periods * 7);
+        cursor = addDays(start, periods * 7);
       }
       while (!cursor.isAfter(end)) {
         result.add(cursor);
-        cursor = _addDays(cursor, 7);
+        cursor = addDays(cursor, 7);
       }
     case Schedule.monthly:
       var index = 0;
@@ -103,9 +122,5 @@ DateTime _yearlyDate(DateTime anchor, int year) {
       : daysInMonth(year, anchor.month);
   return DateTime(year, anchor.month, day);
 }
-
-/// Adds whole days without letting DST shifts move the calendar date.
-DateTime _addDays(DateTime date, int days) =>
-    DateTime(date.year, date.month, date.day + days);
 
 DateTime _earlier(DateTime a, DateTime b) => a.isBefore(b) ? a : b;

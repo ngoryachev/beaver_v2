@@ -13,6 +13,10 @@ const _uuid = Uuid();
 class AccountsNotifier extends AsyncNotifier<List<Account>> {
   @override
   Future<List<Account>> build() {
+    // Per-user data: see [currentUserIdProvider].
+    if (ref.watch(currentUserIdProvider) == null) {
+      return Future.value(const <Account>[]);
+    }
     return ref.watch(accountsRepositoryProvider).getAll();
   }
 

@@ -10,6 +10,10 @@ import 'repo_providers.dart';
 class RatesNotifier extends AsyncNotifier<List<Rate>> {
   @override
   Future<List<Rate>> build() {
+    // Per-user data: see [currentUserIdProvider].
+    if (ref.watch(currentUserIdProvider) == null) {
+      return Future.value(const <Rate>[]);
+    }
     return ref.watch(ratesRepositoryProvider).getAll();
   }
 

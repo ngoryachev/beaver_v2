@@ -39,7 +39,8 @@ class _TransferSheetState extends ConsumerState<TransferSheet> {
   String? _toId;
 
   /// `true` once the user edits the credited amount by hand; from then on the
-  /// rate no longer overwrites it.
+  /// rate no longer overwrites it. Reset whenever either account changes — the
+  /// correction applied to the old pair, not the new one.
   bool _toEditedManually = false;
   bool _saving = false;
   String? _error;
@@ -68,6 +69,20 @@ class _TransferSheetState extends ConsumerState<TransferSheet> {
     final to = _accountById(_toId);
     if (from == null || to == null) return true;
     return from.currencyCode.toUpperCase() == to.currencyCode.toUpperCase();
+  }
+
+  /// Picks one side of the transfer. Any hand-entered credited amount belonged
+  /// to the previous pair of accounts, so it is discarded and recomputed.
+  void _selectAccount(String? accountId, {required bool isSource}) {
+    setState(() {
+      if (isSource) {
+        _fromId = accountId;
+      } else {
+        _toId = accountId;
+      }
+      _toEditedManually = false;
+      _syncToAmount();
+    });
   }
 
   /// Recomputes the credited amount from the debited one, unless the user has
@@ -117,14 +132,18 @@ class _TransferSheetState extends ConsumerState<TransferSheet> {
       _fromController.text,
       decimals: Currency.decimalsOf(from.currencyCode),
     );
-    final credited = Money.tryParse(
-      _toController.text,
-      decimals: Currency.decimalsOf(to.currencyCode),
-    );
     if (debited == null || debited.minor <= 0) {
       setState(() => _error = 'Введите сумму списания');
       return;
     }
+    // With one currency the credited amount is the debited one by definition —
+    // the field is hidden, so its contents must never reach the transfer.
+    final credited = _sameCurrency
+        ? debited
+        : Money.tryParse(
+            _toController.text,
+            decimals: Currency.decimalsOf(to.currencyCode),
+          );
     if (credited == null || credited.minor <= 0) {
       setState(() => _error = 'Введите сумму зачисления');
       return;
@@ -199,10 +218,7 @@ class _TransferSheetState extends ConsumerState<TransferSheet> {
                     ),
                   ),
               ],
-              onChanged: (value) => setState(() {
-                _fromId = value;
-                _syncToAmount();
-              }),
+              onChanged: (value) => _selectAccount(value, isSource: true),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -222,10 +238,7 @@ class _TransferSheetState extends ConsumerState<TransferSheet> {
                     ),
                   ),
               ],
-              onChanged: (value) => setState(() {
-                _toId = value;
-                _syncToAmount();
-              }),
+              onChanged: (value) => _selectAccount(value, isSource: false),
             ),
             const SizedBox(height: 12),
             TextField(
