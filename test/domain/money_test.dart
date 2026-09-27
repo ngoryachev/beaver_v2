@@ -48,6 +48,32 @@ void main() {
     });
   });
 
+  // Also used by the exchange-rate field in settings, which feeds the result to
+  // `double.tryParse` — so it is worth pinning on its own.
+  group('Money.normalizeDecimalInput', () {
+    test('turns a decimal comma into a point', () {
+      expect(Money.normalizeDecimalInput('0,91'), '0.91');
+    });
+
+    test('drops grouping spaces, plain and non-breaking', () {
+      expect(Money.normalizeDecimalInput('1 234,56'), '1234.56');
+      expect(Money.normalizeDecimalInput('1\u00a0234,56'), '1234.56');
+    });
+
+    test('trims surrounding whitespace', () {
+      expect(Money.normalizeDecimalInput('  84,38  '), '84.38');
+    });
+
+    test('leaves an already-normal number alone', () {
+      expect(Money.normalizeDecimalInput('84.38308093'), '84.38308093');
+    });
+
+    test('produces something double.tryParse accepts', () {
+      expect(double.tryParse(Money.normalizeDecimalInput('1 234,56')), 1234.56);
+      expect(double.tryParse(Money.normalizeDecimalInput('нет')), isNull);
+    });
+  });
+
   group('Money scaling', () {
     test('major and fromMajor are inverse', () {
       const money = Money(123456);

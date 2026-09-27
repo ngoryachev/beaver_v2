@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/models/account.dart';
+import '../../../domain/models/money.dart';
 import '../../../domain/models/rate.dart';
 import '../../format/money_format.dart';
 import '../../providers/accounts_provider.dart';
@@ -229,61 +230,86 @@ class _RatesTable extends ConsumerWidget {
     String code,
     Rate? current,
   ) async {
-    final controller = TextEditingController(
-      text: current?.ratePerUsd.toString() ?? '',
-    );
-    // StatefulBuilder so a rejected value can show an error in place instead of
-    // closing the dialog as though it had saved.
-    String? error;
     final value = await showDialog<double>(
       context: context,
-      // `_`, not `context`: the outer one is still used for `context.mounted`
-      // after the dialog closes, and shadowing it here would be a trap.
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (_, setDialogState) => AlertDialog(
-          title: Text('Курс $code'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Сколько $code за 1 USD',
-              border: const OutlineInputBorder(),
-              errorText: error,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final parsed = double.tryParse(
-                  controller.text
-                      .replaceAll('\u00a0', '')
-                      .replaceAll(' ', '')
-                      .replaceAll(',', '.')
-                      .trim(),
-                );
-                if (parsed == null || parsed <= 0) {
-                  setDialogState(() => error = 'Введите число больше нуля');
-                  return;
-                }
-                Navigator.of(dialogContext).pop(parsed);
-              },
-              child: const Text('Сохранить'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _RateDialog(code: code, current: current),
     );
-    controller.dispose();
     if (value == null || !context.mounted) return;
     await runWrite(
       context,
       () => ref.read(ratesProvider.notifier).setManual(code, value),
       failureMessage: 'Не удалось сохранить курс',
+    );
+  }
+}
+
+/// Asks for a manual rate for [code]. Pops the entered value, or `null` when
+/// the user cancels.
+///
+/// A widget rather than an inline `StatefulBuilder` so the controller is owned
+/// by the dialog and disposed with it. Disposing it in the caller right after
+/// `await showDialog(...)` is a bug: that future completes on `Navigator.pop`,
+/// while the dialog is still playing its exit transition and rebuilding the
+/// field — the next frame would then touch a disposed controller.
+class _RateDialog extends StatefulWidget {
+  final String code;
+  final Rate? current;
+
+  const _RateDialog({required this.code, required this.current});
+
+  @override
+  State<_RateDialog> createState() => _RateDialogState();
+}
+
+class _RateDialogState extends State<_RateDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.current?.ratePerUsd.toString() ?? '',
+  );
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    // A rate is a double, not money, but it is typed the same way — so the
+    // same normalisation applies.
+    final parsed = double.tryParse(
+      Money.normalizeDecimalInput(_controller.text),
+    );
+    // A rejected value keeps the dialog open with an error, rather than closing
+    // as though it had saved.
+    if (parsed == null || parsed <= 0) {
+      setState(() => _error = 'Введите число больше нуля');
+      return;
+    }
+    Navigator.of(context).pop(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Курс ${widget.code}'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        onSubmitted: (_) => _submit(),
+        decoration: InputDecoration(
+          labelText: 'Сколько ${widget.code} за 1 USD',
+          border: const OutlineInputBorder(),
+          errorText: _error,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Сохранить')),
+      ],
     );
   }
 }

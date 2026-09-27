@@ -20,6 +20,15 @@ class Money {
   /// Matches an optionally signed decimal: `-12`, `1234.56`, `.5`, `7.`.
   static final _decimal = RegExp(r'^([+-]?)(\d*)(?:\.(\d*))?$');
 
+  /// Turns a number as a Russian user types it into something `num.parse` and
+  /// [tryParse] can read: drops grouping spaces (the formatter emits a
+  /// non-breaking one) and accepts a decimal comma.
+  ///
+  /// Shared with the exchange-rate field, which is a `double` rather than money
+  /// but is typed the same way.
+  static String normalizeDecimalInput(String text) =>
+      text.replaceAll(' ', '').replaceAll(' ', '').replaceAll(',', '.').trim();
+
   /// Parses a human string such as `1 234,56` or `-12.3`. Returns `null` when
   /// the text is not a number, so callers can show a validation error.
   ///
@@ -27,12 +36,7 @@ class Money {
   /// is `100.49999...` in binary floating point, which would round a user's
   /// input *down* a kopeck.
   static Money? tryParse(String text, {int decimals = 2}) {
-    final normalized = text
-        .replaceAll(' ', '')
-        .replaceAll(' ', '')
-        .replaceAll(',', '.')
-        .trim();
-    final match = _decimal.firstMatch(normalized);
+    final match = _decimal.firstMatch(normalizeDecimalInput(text));
     if (match == null) return null;
 
     final whole = match.group(2) ?? '';
