@@ -14,12 +14,18 @@ class AccountCard extends StatelessWidget {
   final int? baseAmount;
   final String baseCurrency;
 
+  /// The active scenario leaves this account out of the total. The card stays
+  /// tappable — the balance still needs editing — but is dimmed and labelled, so
+  /// the headline figure above cannot look like it simply fails to add up.
+  final bool excluded;
+
   const AccountCard({
     super.key,
     required this.account,
     required this.onTap,
     required this.baseAmount,
     required this.baseCurrency,
+    this.excluded = false,
   });
 
   @override
@@ -27,32 +33,36 @@ class AccountCard extends StatelessWidget {
     final theme = Theme.of(context);
     final currency = Currency.byCode(account.currencyCode);
     final isForeign = currency.code != baseCurrency.toUpperCase();
+    final notes = <String>[
+      if (isForeign)
+        baseAmount == null
+            ? 'Нет курса ${currency.code}'
+            : '≈ ${formatMoney(baseAmount!, baseCurrency)}',
+      if (excluded) 'Не в сценарии',
+    ];
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.secondaryContainer,
-          child: Text(
-            currency.symbol,
-            style: TextStyle(color: theme.colorScheme.onSecondaryContainer),
+    return Opacity(
+      opacity: excluded ? 0.5 : 1,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: ListTile(
+          onTap: onTap,
+          leading: CircleAvatar(
+            backgroundColor: theme.colorScheme.secondaryContainer,
+            child: Text(
+              currency.symbol,
+              style: TextStyle(color: theme.colorScheme.onSecondaryContainer),
+            ),
           ),
-        ),
-        title: Text(account.name),
-        subtitle: isForeign
-            ? Text(
-                baseAmount == null
-                    ? 'Нет курса ${currency.code}'
-                    : '≈ ${formatMoney(baseAmount!, baseCurrency)}',
-              )
-            : null,
-        trailing: Text(
-          formatMoney(account.balance, account.currencyCode),
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: account.balance < 0 ? theme.colorScheme.error : null,
+          title: Text(account.name),
+          subtitle: notes.isEmpty ? null : Text(notes.join(' · ')),
+          trailing: Text(
+            formatMoney(account.balance, account.currencyCode),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: account.balance < 0 ? theme.colorScheme.error : null,
+            ),
           ),
         ),
       ),

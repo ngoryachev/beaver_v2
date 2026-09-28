@@ -123,6 +123,10 @@ class _HomeBody extends ConsumerWidget {
                   from: account.currencyCode,
                   to: baseCurrency,
                 ),
+                // The total above is scenario-filtered; marking the accounts it
+                // leaves out is what keeps the two from silently disagreeing.
+                excluded:
+                    scenario != null && !scenario.allowsAccount(account.id),
                 onTap: () => BalanceEditSheet.show(context, account),
               ),
         ],

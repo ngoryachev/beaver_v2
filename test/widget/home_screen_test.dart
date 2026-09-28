@@ -9,6 +9,7 @@ import 'package:beaver_v2/domain/models/rate.dart';
 import 'package:beaver_v2/domain/models/scenario.dart';
 import 'package:beaver_v2/domain/models/user_settings.dart';
 import 'package:beaver_v2/presentation/providers/repo_providers.dart';
+import 'package:beaver_v2/presentation/providers/scenarios_provider.dart';
 import 'package:beaver_v2/presentation/screens/home/home_screen.dart';
 import 'package:beaver_v2/presentation/screens/home/widgets/account_card.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +52,8 @@ Future<InMemoryAccountsRepository> pumpHome(
   List<PlannedOp> ops = const [],
   List<Rate> rates = const [],
   String baseCurrency = 'RUB',
+  List<Scenario>? scenarios,
+  String? activeScenarioId,
 }) async {
   final accountsRepository = InMemoryAccountsRepository(accounts);
 
@@ -63,10 +66,20 @@ Future<InMemoryAccountsRepository> pumpHome(
           InMemoryPlannedOpsRepository(ops),
         ),
         scenariosRepositoryProvider.overrideWithValue(
-          InMemoryScenariosRepository([
-            Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
-          ]),
+          InMemoryScenariosRepository(
+            scenarios ??
+                [
+                  Scenario(
+                    id: 's1',
+                    userId: _userId,
+                    name: 'Все',
+                    isDefault: true,
+                  ),
+                ],
+          ),
         ),
+        if (activeScenarioId != null)
+          activeScenarioIdProvider.overrideWith((ref) => activeScenarioId),
         ratesRepositoryProvider.overrideWithValue(
           InMemoryRatesRepository(rates),
         ),
@@ -649,6 +662,115 @@ void main() {
       await pumpHome(tester, accounts: const []);
 
       expect(find.textContaining('Пока нет счетов'), findsOneWidget);
+    });
+  });
+
+  group('HomeScreen — a scenario that excludes an account', () {
+    testWidgets('marks the card the total leaves out', (tester) async {
+      // The headline figure is scenario-filtered; an unmarked card below it
+      // would make the total look like it simply fails to add up.
+      await pumpHome(
+        tester,
+        accounts: [
+          _account(
+            id: 'a1',
+            name: 'Карта',
+            currencyCode: 'RUB',
+            balance: 100000,
+          ),
+          _account(
+            id: 'a2',
+            name: 'Копилка',
+            currencyCode: 'RUB',
+            balance: 500000,
+            sortOrder: 1,
+          ),
+        ],
+        scenarios: [
+          Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
+          Scenario(
+            id: 's2',
+            userId: _userId,
+            name: 'Без копилки',
+            disabledAccountIds: const {'a2'},
+          ),
+        ],
+        activeScenarioId: 's2',
+      );
+
+      // The total counts only the included account...
+      expect(digitsOf(totalText(tester)), '1000,00');
+      // ...and the excluded one says so rather than silently disagreeing.
+      expect(find.text('Копилка'), findsOneWidget);
+      expect(find.textContaining('Не в сценарии'), findsOneWidget);
+    });
+
+    testWidgets('leaves the included card unmarked', (tester) async {
+      await pumpHome(
+        tester,
+        accounts: [
+          _account(
+            id: 'a1',
+            name: 'Карта',
+            currencyCode: 'RUB',
+            balance: 100000,
+          ),
+        ],
+        scenarios: [
+          Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
+        ],
+        activeScenarioId: 's1',
+      );
+
+      expect(find.textContaining('Не в сценарии'), findsNothing);
+    });
+
+    testWidgets('keeps the excluded card tappable for balance edits', (
+      tester,
+    ) async {
+      final repository = await pumpHome(
+        tester,
+        accounts: [
+          _account(
+            id: 'a1',
+            name: 'Карта',
+            currencyCode: 'RUB',
+            balance: 100000,
+          ),
+          _account(
+            id: 'a2',
+            name: 'Копилка',
+            currencyCode: 'RUB',
+            balance: 500000,
+            sortOrder: 1,
+          ),
+        ],
+        scenarios: [
+          Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
+          Scenario(
+            id: 's2',
+            userId: _userId,
+            name: 'Без копилки',
+            disabledAccountIds: const {'a2'},
+          ),
+        ],
+        activeScenarioId: 's2',
+      );
+
+      await tester.tap(find.text('Копилка'));
+      await tester.pumpAndSettle();
+      for (final digit in ['2', '5', '0']) {
+        await tester.tap(find.widgetWithText(OutlinedButton, digit));
+        await tester.pump();
+      }
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+      await tester.pumpAndSettle();
+
+      final stored = {
+        for (final account in await repository.getAll())
+          account.id: account.balance,
+      };
+      expect(stored['a2'], 25000);
     });
   });
 }

@@ -300,7 +300,10 @@ void main() {
       expect(find.textContaining('Нет курса'), findsNothing);
       // 500 € → 555.56 $ → 50 000 ₽, on top of the 10 000 ₽ already there. With
       // no operations, «Сейчас», the horizon and the minimum all show it.
-      expect(find.text(formatMoney(1000000 + 5000000, 'RUB')), findsNWidgets(3));
+      expect(
+        find.text(formatMoney(1000000 + 5000000, 'RUB')),
+        findsNWidgets(3),
+      );
     });
 
     testWidgets('an unconvertible event still appears in the list', (
@@ -325,6 +328,50 @@ void main() {
       expect(find.text('нет курса'), findsOneWidget);
       // The balance is not silently reduced by an amount nobody can convert.
       expect(find.text(formatMoney(1000000, 'RUB')), findsWidgets);
+    });
+  });
+
+  group('a long horizon', () {
+    // The event list is a `SliverList.builder` so tiles are constructed on
+    // demand rather than all at once on every rebuild. That is a widget-
+    // construction cost, which `find` cannot observe — both delegates mount
+    // only the visible tiles — so these tests guard the restructure itself:
+    // the screen still renders and still scrolls all the way through.
+    testWidgets('renders its events', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 100000000)],
+        ops: [_op(id: 'o1', title: 'Кофе', amount: 10000)],
+      );
+
+      await tester.tap(find.text('+90 дней'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Кофе'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('scrolls to events beyond the first screenful', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 100000000)],
+        ops: [_op(id: 'o1', title: 'Кофе', amount: 10000)],
+      );
+
+      await tester.tap(find.text('+90 дней'));
+      await tester.pumpAndSettle();
+      final before = tester.widgetList(find.byType(ListTile)).length;
+
+      await tester.fling(
+        find.byType(CustomScrollView),
+        const Offset(0, -4000),
+        3000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(before, greaterThan(0));
+      expect(find.text('Кофе'), findsWidgets);
+      expect(tester.takeException(), isNull);
     });
   });
 }

@@ -167,9 +167,16 @@ class _RatesTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final codes = ref.watch(usedCurrencyCodesProvider).toList()..sort();
     final rates = ref.watch(ratesProvider).valueOrNull ?? const <Rate>[];
     final byCode = {for (final rate in rates) rate.code.toUpperCase(): rate};
+    // Manual overrides stay listed even once nothing uses their currency any
+    // more: the row survives in `rates` and the auto refresh keeps skipping it,
+    // so «Сбросить» has to remain reachable.
+    final codes = <String>{
+      ...ref.watch(usedCurrencyCodesProvider),
+      for (final rate in rates)
+        if (rate.source == RateSource.manual) rate.code.toUpperCase(),
+    }.toList()..sort();
 
     if (codes.isEmpty) {
       return const Padding(

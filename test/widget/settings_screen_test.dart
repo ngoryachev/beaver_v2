@@ -226,10 +226,7 @@ void main() {
 
       // Deleted, not overwritten with an auto value: the row has to be absent
       // for the next refresh to fill it in.
-      expect(
-        (await harness.rates.getAll()).map((rate) => rate.code),
-        ['RUB'],
-      );
+      expect((await harness.rates.getAll()).map((rate) => rate.code), ['RUB']);
       expect(find.text('Нет курса'), findsOneWidget);
       expect(find.text('Сбросить'), findsNothing);
     });
@@ -319,6 +316,52 @@ void main() {
       );
 
       expect(find.textContaining('EUR · итог считается в ней'), findsOneWidget);
+    });
+  });
+
+  group('a manual rate whose currency is no longer used', () {
+    testWidgets('stays listed so «Сбросить» can still reach it', (
+      tester,
+    ) async {
+      // The row survives in `rates` and the auto refresh keeps skipping it, so
+      // dropping it from the list would strand a stale override that resurfaces
+      // the moment a EUR account is added again.
+      await _pumpSettings(
+        tester,
+        accounts: [_account(id: 'a1', name: 'Карта', code: 'RUB')],
+        rates: [
+          Rate(
+            userId: _userId,
+            code: 'EUR',
+            ratePerUsd: 0.8,
+            source: RateSource.manual,
+            updatedAt: DateTime.utc(2026, 9, 20),
+          ),
+        ],
+      );
+
+      expect(find.text('EUR'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Сбросить'), findsOneWidget);
+    });
+
+    testWidgets('an orphaned auto rate is not listed', (tester) async {
+      // Only a manual override needs the escape hatch; an unused auto row is
+      // noise and will be refreshed away on its own.
+      await _pumpSettings(
+        tester,
+        accounts: [_account(id: 'a1', name: 'Карта', code: 'RUB')],
+        rates: [
+          Rate(
+            userId: _userId,
+            code: 'EUR',
+            ratePerUsd: 0.8,
+            source: RateSource.auto,
+            updatedAt: DateTime.utc(2026, 9, 20),
+          ),
+        ],
+      );
+
+      expect(find.text('EUR'), findsNothing);
     });
   });
 }

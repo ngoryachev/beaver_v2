@@ -68,124 +68,144 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Прогноз')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 32),
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _presetChip('Конец месяца', _Preset.endOfMonth),
-                _presetChip('+30 дней', _Preset.plus30),
-                _presetChip('+90 дней', _Preset.plus90),
-                FilterChip(
-                  label: Text(
-                    _preset == _Preset.custom && _customDate != null
-                        ? formatDate(_customDate!)
-                        : 'Другая дата',
-                  ),
-                  avatar: const Icon(Icons.event, size: 18),
-                  selected: _preset == _Preset.custom,
-                  onSelected: (_) => _pickCustomDate(),
+      body: CustomScrollView(
+        slivers: [
+          SliverList(
+            delegate: SliverChildListDelegate([
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
                 ),
-              ],
-            ),
-          ),
-          if (scenario != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Сценарий: ${scenario.name}',
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          if (projection.missingRateCodes.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Card(
-                color: theme.colorScheme.errorContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.currency_exchange,
-                        color: theme.colorScheme.onErrorContainer,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _presetChip('Конец месяца', _Preset.endOfMonth),
+                    _presetChip('+30 дней', _Preset.plus30),
+                    _presetChip('+90 дней', _Preset.plus90),
+                    FilterChip(
+                      label: Text(
+                        _preset == _Preset.custom && _customDate != null
+                            ? formatDate(_customDate!)
+                            : 'Другая дата',
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Нет курса для '
-                          '${projection.missingRateCodes.join(', ')}. '
-                          'Эти суммы не учтены в прогнозе.',
-                          style: TextStyle(
+                      avatar: const Icon(Icons.event, size: 18),
+                      selected: _preset == _Preset.custom,
+                      onSelected: (_) => _pickCustomDate(),
+                    ),
+                  ],
+                ),
+              ),
+              if (scenario != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Сценарий: ${scenario.name}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              if (projection.missingRateCodes.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Card(
+                    color: theme.colorScheme.errorContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.currency_exchange,
                             color: theme.colorScheme.onErrorContainer,
                           ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Нет курса для '
+                              '${projection.missingRateCodes.join(', ')}. '
+                              'Эти суммы не учтены в прогнозе.',
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _summaryTile(
+                        label: 'Сейчас',
+                        value: formatMoney(
+                          projection.startBalance,
+                          baseCurrency,
                         ),
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _summaryTile(
+                        label: formatDate(_targetDate),
+                        value: formatMoney(projection.endBalance, baseCurrency),
+                        isNegative: projection.endBalance < 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _summaryTile(
+                  label: 'Минимум · ${formatDate(projection.minDate)}',
+                  value: formatMoney(projection.minBalance, baseCurrency),
+                  isNegative: projection.minBalance < 0,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 240,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16, top: 8),
+                  child: _BalanceChart(
+                    projection: projection,
+                    baseCurrency: baseCurrency,
                   ),
                 ),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _summaryTile(
-                    label: 'Сейчас',
-                    value: formatMoney(projection.startBalance, baseCurrency),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _summaryTile(
-                    label: formatDate(_targetDate),
-                    value: formatMoney(projection.endBalance, baseCurrency),
-                    isNegative: projection.endBalance < 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _summaryTile(
-              label: 'Минимум · ${formatDate(projection.minDate)}',
-              value: formatMoney(projection.minBalance, baseCurrency),
-              isNegative: projection.minBalance < 0,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 240,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 16, top: 8),
-              child: _BalanceChart(
-                projection: projection,
-                baseCurrency: baseCurrency,
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text('События', style: theme.textTheme.titleMedium),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('События', style: theme.textTheme.titleMedium),
+            ]),
           ),
           if (projection.events.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'В этом периоде операций нет.',
-                textAlign: TextAlign.center,
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'В этом периоде операций нет.',
+                  textAlign: TextAlign.center,
+                ),
               ),
             )
           else
-            for (final event in projection.events)
-              _EventTile(event: event, baseCurrency: baseCurrency),
+            // Built on demand: a custom date years out over a daily operation
+            // runs to thousands of events, and a child list would build every
+            // tile on every rebuild of the screen.
+            SliverList.builder(
+              itemCount: projection.events.length,
+              itemBuilder: (context, index) => _EventTile(
+                event: projection.events[index],
+                baseCurrency: baseCurrency,
+              ),
+            ),
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );

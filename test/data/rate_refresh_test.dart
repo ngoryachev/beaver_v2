@@ -292,6 +292,61 @@ void main() {
       expect(client.calls, 0);
     });
 
+    test('a currency neither source knows stops forcing a fetch', () async {
+      // The sources simply omit an unknown code, so no row ever appears for it.
+      // Treating that as «missing a rate» for ever would make every resume past
+      // the throttle fire a fresh request.
+      final client = _FakeClient({'RUB': 84.0});
+      final container = _container(
+        accounts: InMemoryAccountsRepository([
+          _account('RUB'),
+          _account('XXX'),
+        ]),
+        client: client,
+      );
+
+      final notifier = container.read(rateRefreshProvider.notifier);
+      await notifier.refreshIfStale();
+      expect(client.calls, 1);
+
+      // Past the 2 s throttle, so only the staleness rule can hold it back.
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
+      await notifier.refreshIfStale();
+
+      expect(client.calls, 1, reason: 'XXX must not force a second fetch');
+      // RUB was still stored, so the useful half of the refresh worked.
+      final stored =
+          container.read(ratesProvider).valueOrNull ?? const <Rate>[];
+      expect(stored.map((rate) => rate.code), ['RUB']);
+    });
+
+    test(
+      '«обновить сейчас» still retries a code that failed to fetch',
+      () async {
+        // Skipping a code only stops it *forcing* a refresh; an explicit request
+        // must still try it, and a code that answers is forgiven.
+        final client = _FakeClient({'RUB': 84.0});
+        final container = _container(
+          accounts: InMemoryAccountsRepository([
+            _account('RUB'),
+            _account('EUR'),
+          ]),
+          client: client,
+        );
+
+        final notifier = container.read(rateRefreshProvider.notifier);
+        await notifier.refreshIfStale();
+        expect(client.calls, 1);
+
+        client.rates['EUR'] = 0.88;
+        await notifier.refreshNow();
+
+        final stored =
+            container.read(ratesProvider).valueOrNull ?? const <Rate>[];
+        expect({for (final rate in stored) rate.code}, {'RUB', 'EUR'});
+      },
+    );
+
     test('a second call within the throttle window does not refetch', () async {
       final client = _FakeClient({'RUB': 84.0});
       final container = _container(

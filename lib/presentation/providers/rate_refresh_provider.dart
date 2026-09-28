@@ -25,6 +25,11 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
   DateTime? _lastCheck;
   bool _running = false;
 
+  /// Codes the last successful fetch came back without. Neither source knows
+  /// them, so treating them as "missing a rate" would make every resume fire a
+  /// fresh request for ever; they wait for the normal staleness window instead.
+  final Set<String> _unfetchable = {};
+
   @override
   AsyncValue<void> build() => const AsyncValue.data(null);
 
@@ -51,13 +56,14 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
     await refreshNow();
   }
 
-  /// Whether some currency in use has no stored rate. USD needs none: it is the
-  /// pivot every rate is quoted against.
+  /// Whether some currency in use has no stored rate and is worth asking for.
+  /// USD needs none: it is the pivot every rate is quoted against.
   bool _hasUnratedCurrency() {
     final known = {
       for (final rate in ref.read(ratesProvider).valueOrNull ?? const <Rate>[])
         rate.code.toUpperCase(),
       'USD',
+      ..._unfetchable,
     };
     return ref
         .read(usedCurrencyCodesProvider)
@@ -76,6 +82,16 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
     state = const AsyncValue.loading();
     try {
       final fetched = await ref.read(rateFetcherProvider).fetch(codes);
+      // Whatever the sources did not return is not going to appear on a retry;
+      // remember it so it stops forcing a fetch on every resume. A code that
+      // did come back is forgiven, in case it was a transient gap.
+      _unfetchable
+        ..removeAll(fetched.keys.map((code) => code.toUpperCase()))
+        ..addAll(
+          codes
+              .map((code) => code.toUpperCase())
+              .where((code) => code != 'USD' && !fetched.containsKey(code)),
+        );
       await ref.read(ratesProvider.notifier).applyAuto(fetched);
       state = const AsyncValue.data(null);
     } catch (error, stack) {
