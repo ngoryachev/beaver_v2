@@ -75,20 +75,17 @@ class RateTable {
     final toDecimals = Currency.decimalsOf(toCode);
     final converted = major / fromRate * toRate;
 
-    // A rate can be finite and still produce an unrepresentable amount: a rate
-    // of 1e-320 divides into infinity, and one of 1e-300 overflows int64 and
-    // would silently saturate. `.round()` throws on the former and lies on the
-    // latter, so neither may reach it — an amount this app cannot hold is
-    // reported like a missing rate instead.
+    // A rate can be finite and still produce an unrepresentable amount: 1e-320
+    // divides into infinity, and 1e-300 into a number past what an amount may
+    // hold. `.round()` throws on the former and silently saturates on the
+    // latter, so neither may reach it — the same [Money.maxMinor] ceiling the
+    // parser enforces on typed input applies here, and an amount beyond it is
+    // reported like a missing rate.
     final scaled = converted * _pow10(toDecimals);
-    if (!scaled.isFinite || scaled.abs() > _maxSafeMinor) return null;
+    if (!scaled.isFinite || scaled.abs() > Money.maxMinor) return null;
 
     return Money.fromMajor(converted, decimals: toDecimals).minor;
   }
-
-  /// Largest magnitude `.round()` can turn into an `int` without saturating at
-  /// the 64-bit boundary. Any real balance is many orders of magnitude below it.
-  static const _maxSafeMinor = 9.0e18;
 
   static double _pow10(int exponent) {
     var result = 1.0;

@@ -74,6 +74,65 @@ void main() {
     });
   });
 
+  // Scaling to minor units silently corrupts an amount that does not fit, so
+  // the parser refuses anything past [Money.maxMinor]. The boundary is exact
+  // rather than a round guess, and the check runs *before* multiplying —
+  // afterwards the corruption is indistinguishable from a real number.
+  group('Money.tryParse at the representable boundary', () {
+    test('maxMinor is 2^53, the limit both targets hold exactly', () {
+      // Not int64 max: on the web an `int` is a JS double, and the web build is
+      // the deployed one. A larger literal does not even compile for it.
+      expect(Money.maxMinor, 9007199254740992);
+    });
+
+    test('accepts the largest representable amount, to the kopeck', () {
+      expect(Money.tryParse('90071992547409.92')?.minor, Money.maxMinor);
+      expect(Money.tryParse('-90071992547409.92')?.minor, -Money.maxMinor);
+    });
+
+    test('refuses one kopeck past it', () {
+      expect(Money.tryParse('90071992547409.93'), isNull);
+      expect(Money.tryParse('90071992547410'), isNull);
+    });
+
+    test('counts the rounding carry against the limit', () {
+      // .924 rounds down and still fits; .925 would round up past the end.
+      expect(Money.tryParse('90071992547409.924')?.minor, Money.maxMinor);
+      expect(Money.tryParse('90071992547409.925'), isNull);
+    });
+
+    test('a long amount never comes back negative or altered', () {
+      for (final digits in [13, 14, 15, 16, 17, 18, 20, 25]) {
+        final text = '9' * digits;
+        final parsed = Money.tryParse(text);
+        if (parsed == null) continue;
+
+        expect(parsed.minor, greaterThan(0), reason: '$digits digits');
+        // Compared in minor units, not via `major`: that getter goes through
+        // `double`, which cannot hold these magnitudes exactly.
+        expect(
+          parsed.minor,
+          int.parse(text) * 100,
+          reason: '$digits digits must scale exactly',
+        );
+      }
+    });
+
+    test('a zero-decimal currency has the same limit, without scaling', () {
+      expect(
+        Money.tryParse('9007199254740992', decimals: 0)?.minor,
+        Money.maxMinor,
+      );
+      expect(Money.tryParse('9007199254740993', decimals: 0), isNull);
+    });
+
+    test('ordinary amounts are untouched by the guard', () {
+      expect(Money.tryParse('1234,56')?.minor, 123456);
+      expect(Money.tryParse('0,01')?.minor, 1);
+      expect(Money.tryParse('1000000')?.minor, 100000000);
+    });
+  });
+
   group('Money scaling', () {
     test('major and fromMajor are inverse', () {
       const money = Money(123456);

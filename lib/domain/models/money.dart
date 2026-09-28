@@ -55,11 +55,31 @@ class Money {
     if (kept == null) return null;
     final roundUp = padded.codeUnitAt(decimals) >= _zero + 5;
 
-    final minor = units * _pow10(decimals) + kept + (roundUp ? 1 : 0);
+    // Scaling to minor units silently corrupts an amount that does not fit:
+    // on the VM 64-bit arithmetic wraps (17 digits of roubles become a large
+    // *negative* balance), on the web an `int` is a JS double and simply loses
+    // the low digits. Nothing upstream caps the digit count, so the check
+    // belongs here — an amount this app cannot hold is refused like `Infinity`
+    // is, and every caller already renders `null` as «Введите сумму». Checked
+    // before multiplying, because afterwards the evidence is gone.
+    final scale = _pow10(decimals);
+    final extra = kept + (roundUp ? 1 : 0);
+    if (units > (maxMinor - extra) ~/ scale) return null;
+
+    final minor = units * scale + extra;
     return Money(match.group(1) == '-' ? -minor : minor, decimals: decimals);
   }
 
   static const _zero = 0x30;
+
+  /// Largest amount, in minor units, that every target represents exactly.
+  ///
+  /// Dart's `int` is 64-bit on the VM but a JavaScript double on the web — and
+  /// the web build is the deployed one — so integers are exact only up to 2^53
+  /// there. Allowing more would make the same typed amount mean different things
+  /// on different platforms. 2^53 kopecks is about 90 trillion roubles, far past
+  /// any balance this app will hold, and well inside the `BIGINT` column.
+  static const maxMinor = 9007199254740992; // 2^53
 
   /// Amount expressed in major units, for display and rate arithmetic only.
   double get major => minor / _pow10(decimals);
