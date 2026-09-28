@@ -17,7 +17,6 @@ import 'package:beaver_v2/presentation/screens/auth/login_screen.dart';
 import 'package:beaver_v2/presentation/screens/auth/register_screen.dart';
 import 'package:beaver_v2/presentation/screens/home/home_screen.dart';
 import 'package:beaver_v2/router.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
