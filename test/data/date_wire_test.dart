@@ -36,4 +36,45 @@ void main() {
       expect(dateFromWire('2026-03-01T00:00:00'), DateTime(2026, 3, 1));
     });
   });
+
+  // PostgREST hands back a non-finite `double precision` as a JSON *string*.
+  // A plain `as num` cast throws on it, which fails the whole rates query and
+  // leaves the app with no rates at all — and no «Сбросить» button to remove
+  // the offending row, because settings builds that from the loaded rows.
+  group('rateFromWire', () {
+    test('reads an ordinary number', () {
+      expect(rateFromWire(84.38), 84.38);
+      expect(rateFromWire(90), 90.0);
+    });
+
+    test('reads the string form Postgres uses for non-finite values', () {
+      expect(rateFromWire('Infinity'), double.infinity);
+      expect(rateFromWire('-Infinity'), double.negativeInfinity);
+      expect(rateFromWire('NaN').isNaN, isTrue);
+    });
+
+    test('reads a number that arrived as a string', () {
+      expect(rateFromWire('84.38'), 84.38);
+    });
+
+    test('turns anything unrecognisable into NaN rather than throwing', () {
+      expect(rateFromWire(null).isNaN, isTrue);
+      expect(rateFromWire('нет').isNaN, isTrue);
+      expect(rateFromWire(<String, Object>{}).isNaN, isTrue);
+    });
+
+    test('never throws, whatever the column holds', () {
+      for (final value in <Object?>[
+        null,
+        'Infinity',
+        'NaN',
+        '',
+        true,
+        [1],
+        84.38,
+      ]) {
+        expect(() => rateFromWire(value), returnsNormally, reason: '$value');
+      }
+    });
+  });
 }

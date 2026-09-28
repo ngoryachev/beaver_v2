@@ -287,8 +287,10 @@ class _RateDialogState extends State<_RateDialog> {
       Money.normalizeDecimalInput(_controller.text),
     );
     // A rejected value keeps the dialog open with an error, rather than closing
-    // as though it had saved.
-    if (parsed == null || parsed <= 0) {
+    // as though it had saved. `isFinite` is not redundant next to `<= 0`:
+    // `double.tryParse` accepts 'Infinity' and 'NaN', and neither compares as
+    // less than or equal to zero.
+    if (parsed == null || !parsed.isFinite || parsed <= 0) {
       setState(() => _error = 'Введите число больше нуля');
       return;
     }

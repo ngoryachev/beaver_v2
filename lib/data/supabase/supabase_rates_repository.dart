@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/models/rate.dart';
 import '../../domain/repositories/rates_repository.dart';
+import 'date_wire.dart';
 
 class SupabaseRatesRepository implements RatesRepository {
   final SupabaseClient _client;
@@ -51,7 +52,7 @@ class SupabaseRatesRepository implements RatesRepository {
   Rate _toEntity(Map<String, dynamic> json) => Rate(
     userId: json['user_id'] as String,
     code: json['code'] as String,
-    ratePerUsd: (json['rate_per_usd'] as num).toDouble(),
+    ratePerUsd: rateFromWire(json['rate_per_usd']),
     source: RateSource.fromWire(json['source'] as String? ?? 'auto'),
     updatedAt: DateTime.parse(json['updated_at'] as String),
   );
