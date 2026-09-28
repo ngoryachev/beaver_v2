@@ -1,4 +1,5 @@
 import 'package:beaver_v2/domain/models/account.dart';
+import 'package:beaver_v2/domain/models/money.dart';
 import 'package:beaver_v2/domain/models/planned_op.dart';
 import 'package:beaver_v2/domain/models/rate.dart';
 import 'package:beaver_v2/domain/models/scenario.dart';
@@ -630,5 +631,87 @@ void main() {
     test('with no accounts the stored base currency survives', () {
       expect(normalizeBaseCurrency('KZT', const []), 'KZT');
     });
+  });
+
+  // The total must never quietly shed money. `convertMinor` returns null both
+  // for a rate it lacks and for a product too large to represent, and the second
+  // case used to leave `missingRateCodes` empty — so the amount vanished from
+  // the total with nothing on screen to say so.
+  group('nothing leaves the total unrecorded', () {
+    // 10 000 000 000 000,00 $ is inside `Money.maxMinor`, so the app accepts and
+    // stores it, but converting it at 90 ₽/$ overruns what an amount may hold.
+    final hugeButAccepted = Money.tryParse('10000000000000,00')!.minor;
+    final rates = RateTable.fromRates([_rate('RUB', 90), _rate('USD', 1)]);
+
+    test('an unconvertible balance is named instead of dropped', () {
+      final result = projectBalance(
+        accounts: [
+          _account(id: 'a1', currencyCode: 'USD', balance: hugeButAccepted),
+        ],
+        ops: const [],
+        from: DateTime(2026, 3, 1),
+        to: DateTime(2026, 3, 2),
+        rates: rates,
+        baseCurrency: 'RUB',
+      );
+
+      expect(result.startBalance, 0, reason: 'it cannot be counted');
+      expect(
+        result.missingRateCodes,
+        isNotEmpty,
+        reason: 'but the user has to be told it was left out',
+      );
+      expect(result.missingRateCodes, contains('USD'));
+    });
+
+    test('an unconvertible operation is named instead of dropped', () {
+      final result = projectBalance(
+        accounts: [_account(id: 'a1', currencyCode: 'RUB', balance: 100000)],
+        ops: [_op(currencyCode: 'USD', amount: hugeButAccepted)],
+        from: DateTime(2026, 3, 1),
+        to: DateTime(2026, 3, 5),
+        rates: rates,
+        baseCurrency: 'RUB',
+      );
+
+      expect(result.endBalance, result.startBalance);
+      expect(result.missingRateCodes, contains('USD'));
+    });
+
+    test(
+      'every live account either counts or is named, whatever the rates',
+      () {
+        // The invariant behind both cases above, over a spread of balances and
+        // rates: an account is in the total, or it is in the warning.
+        for (final balance in [0, 100000, 1 << 40, Money.maxMinor ~/ 2]) {
+          for (final usdRate in [1.0, 1e-6, 1e6]) {
+            final table = RateTable.fromRates([
+              _rate('RUB', 90),
+              _rate('USD', usdRate),
+            ]);
+            final result = projectBalance(
+              accounts: [
+                _account(id: 'a1', currencyCode: 'RUB', balance: 100000),
+                _account(id: 'a2', currencyCode: 'USD', balance: balance),
+              ],
+              ops: const [],
+              from: DateTime(2026, 3, 1),
+              to: DateTime(2026, 3, 2),
+              rates: table,
+              baseCurrency: 'RUB',
+            );
+
+            final counted =
+                result.startBalance != 100000 ||
+                table.convertMinor(balance, from: 'USD', to: 'RUB') == 0;
+            expect(
+              counted || result.missingRateCodes.contains('USD'),
+              isTrue,
+              reason: 'balance $balance at $usdRate/USD was silently dropped',
+            );
+          }
+        }
+      },
+    );
   });
 }

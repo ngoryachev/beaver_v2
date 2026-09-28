@@ -51,13 +51,17 @@ class ProjectionResult {
   /// Date [minBalance] is first reached.
   final DateTime minDate;
 
-  /// Currency codes that appear in the input but have no usable rate. Amounts
-  /// in those currencies are excluded from the totals rather than counted as 0,
-  /// so the UI can warn instead of quietly lying.
+  /// Currency codes whose amounts could not be converted into the base currency.
+  /// They are excluded from the totals rather than counted as 0, so the UI can
+  /// warn instead of quietly lying.
   ///
   /// A conversion needs a rate on both sides, so this names whichever side is
   /// actually missing: if the *base* currency is the unrated one, blaming every
   /// other currency would point the user at the wrong row in settings.
+  ///
+  /// A conversion can also fail with both rates present, when the result is too
+  /// large to represent. The currency is named either way — what matters is that
+  /// no amount silently leaves the total.
   final Set<String> missingRateCodes;
 
   const ProjectionResult({
@@ -99,7 +103,7 @@ ProjectionResult projectBalance({
       to: base,
     );
     if (converted == null) {
-      missing.addAll(rates.missing([account.currencyCode, base]));
+      missing.addAll(_blameFor(rates, account.currencyCode, base));
       continue;
     }
     startBalance += converted;
@@ -120,7 +124,7 @@ ProjectionResult projectBalance({
       to: base,
     );
     if (converted == null) {
-      missing.addAll(rates.missing([op.currencyCode, base]));
+      missing.addAll(_blameFor(rates, op.currencyCode, base));
     }
 
     for (final date in dates) {
@@ -170,6 +174,17 @@ ProjectionResult projectBalance({
     minDate: minDate,
     missingRateCodes: missing,
   );
+}
+
+/// Currencies to blame when a conversion of [code] into [base] fails.
+///
+/// Normally that is whichever side has no rate. When both rates are present the
+/// failure was representability — the product is past [Money.maxMinor] — and
+/// naming nothing would drop the amount from the total with no warning at all,
+/// which is the one outcome worse than an imprecise message.
+Set<String> _blameFor(RateTable rates, String code, String base) {
+  final unrated = rates.missing([code, base]);
+  return unrated.isEmpty ? {code.toUpperCase()} : unrated;
 }
 
 /// Currencies the base currency is allowed to be: those of the non-archived
