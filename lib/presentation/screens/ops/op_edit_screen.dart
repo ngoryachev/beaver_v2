@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../domain/models/account.dart';
 import '../../../domain/models/currency.dart';
 import '../../../domain/models/money.dart';
 import '../../../domain/models/planned_op.dart';
@@ -94,6 +95,13 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
     final amount = Money.tryParse(_amountController.text, decimals: decimals);
     if (amount == null || amount.minor <= 0) return;
 
+    // An account id that resolves to nothing would be rejected by the foreign
+    // key; the editor already shows «Любой» for it, so save that.
+    final allAccounts = ref.read(accountsProvider).valueOrNull ?? const [];
+    final dangling =
+        draft.accountId != null &&
+        !allAccounts.any((account) => account.id == draft.accountId);
+
     setState(() => _saving = true);
     final ok = await runWrite(
       context,
@@ -103,6 +111,8 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
             draft.copyWith(
               title: _titleController.text.trim(),
               amount: amount.minor,
+              currencyCode: Currency.byCode(draft.currencyCode).code,
+              clearAccountId: dangling,
             ),
           ),
       failureMessage: 'Не удалось сохранить операцию',
@@ -118,7 +128,37 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
     if (draft == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final accounts = ref.watch(activeAccountsProvider);
+    final activeAccounts = ref.watch(activeAccountsProvider);
+    final allAccounts = ref.watch(accountsProvider).valueOrNull ?? const [];
+
+    // A dropdown asserts unless its value is among its items, so both lists
+    // below have to admit whatever the operation already stores.
+
+    // The account may have been archived since; keep it listed (marked) rather
+    // than dropping it — silently re-pointing the operation at «Любой» would
+    // lose what the user meant. An id matching nothing at all (the FK nulls it
+    // on delete, so only a hand-edited row) falls back to «Любой».
+    final referenced = draft.accountId == null
+        ? null
+        : allAccounts.where((a) => a.id == draft.accountId).firstOrNull;
+    final accounts = <Account>[
+      ...activeAccounts,
+      if (referenced != null && referenced.archived) referenced,
+    ];
+    final selectedAccountId = accounts.any((a) => a.id == draft.accountId)
+        ? draft.accountId
+        : null;
+
+    // `Currency.byCode` tolerates a code this build does not know — one written
+    // by a newer build, or straight into a column whose CHECK is only
+    // `^[A-Z]{3}$` — so the editor must tolerate it too. The shown value comes
+    // from the same lookup as the item, because `byCode` also canonicalises the
+    // case: resolving the two separately would mismatch on a stored `pln`.
+    final currency = Currency.byCode(draft.currencyCode);
+    final currencies = <Currency>[
+      ...Currency.all,
+      if (!Currency.all.contains(currency)) currency,
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -180,13 +220,13 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    initialValue: draft.currencyCode,
+                    initialValue: currency.code,
                     decoration: const InputDecoration(
                       labelText: 'Валюта',
                       border: OutlineInputBorder(),
                     ),
                     items: [
-                      for (final currency in Currency.all)
+                      for (final currency in currencies)
                         DropdownMenuItem(
                           value: currency.code,
                           child: Text(currency.code),
@@ -248,7 +288,7 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String?>(
-              initialValue: draft.accountId,
+              initialValue: selectedAccountId,
               decoration: const InputDecoration(
                 labelText: 'Счёт',
                 helperText: 'Не обязательно: влияет только на общий итог',
@@ -259,7 +299,11 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
                 for (final account in accounts)
                   DropdownMenuItem(
                     value: account.id,
-                    child: Text(account.name),
+                    child: Text(
+                      account.archived
+                          ? '${account.name} (в архиве)'
+                          : account.name,
+                    ),
                   ),
               ],
               onChanged: (value) => setState(
