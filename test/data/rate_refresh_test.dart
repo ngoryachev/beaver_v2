@@ -35,6 +35,18 @@ class _FakeClient extends http.BaseClient {
   }
 }
 
+/// Both sources unreachable — a real outage, as opposed to sources that answer
+/// but do not list the code.
+class _DeadClient extends _FakeClient {
+  _DeadClient() : super(const {});
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    calls++;
+    throw http.ClientException('Нет соединения', request.url);
+  }
+}
+
 /// An accounts repository that only answers after [gate] completes — this is what
 /// a cold start looks like, with the network round trip still in flight.
 class _SlowAccountsRepository extends InMemoryAccountsRepository {
@@ -346,6 +358,31 @@ void main() {
         expect({for (final rate in stored) rate.code}, {'RUB', 'EUR'});
       },
     );
+
+    test('a failed fetch does not count as a completed check', () async {
+      // The staleness window is anchored partly on when a fetch last completed.
+      // Letting an outage set that anchor would suppress retries for a day.
+      final client = _DeadClient();
+      final container = _container(
+        accounts: InMemoryAccountsRepository([_account('RUB')]),
+        client: client,
+      );
+
+      final notifier = container.read(rateRefreshProvider.notifier);
+      await notifier.refreshIfStale();
+      final afterFirst = client.calls;
+      expect(afterFirst, greaterThan(0));
+      expect(container.read(rateRefreshProvider).hasError, isTrue);
+
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
+      await notifier.refreshIfStale();
+
+      expect(
+        client.calls,
+        greaterThan(afterFirst),
+        reason: 'an outage must still be retried on the next resume',
+      );
+    });
 
     test('a second call within the throttle window does not refetch', () async {
       final client = _FakeClient({'RUB': 84.0});

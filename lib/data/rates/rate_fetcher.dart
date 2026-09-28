@@ -23,8 +23,17 @@ class RateFetcher {
   ///
   /// Only the requested codes are returned — the APIs ship ~200 currencies and
   /// storing all of them per user would be pointless. USD is always 1 and needs
-  /// no lookup. Codes neither source knows are simply absent from the result, so
-  /// the caller keeps reporting them as missing rather than storing a wrong value.
+  /// no lookup.
+  ///
+  /// The fallback is whole-source, not per-code: the first source that answers
+  /// with anything wins, so a code missing from an otherwise useful primary
+  /// response is absent from the result without the secondary being asked. Any
+  /// code that ends up absent is reported as missing rather than stored with a
+  /// wrong value.
+  ///
+  /// Throws [RateFetchException] only when *both* sources fail. A source that
+  /// answers but lists none of [codes] yields an empty map, which is a fact
+  /// about those currencies, not a failure to reach the network.
   Future<Map<String, double>> fetch(Iterable<String> codes) async {
     final wanted = {
       for (final code in codes)
@@ -32,26 +41,32 @@ class RateFetcher {
     }..remove('USD');
     if (wanted.isEmpty) return const {};
 
-    final fromPrimary = await _tryFetch(_fetchPrimary, wanted);
-    if (fromPrimary != null) return fromPrimary;
+    var anyAnswered = false;
+    for (final source in [_fetchPrimary, _fetchFallback]) {
+      final rates = await _tryFetch(source, wanted);
+      if (rates == null) continue; // This source failed; try the next.
+      anyAnswered = true;
+      if (rates.isNotEmpty) return rates;
+    }
 
-    final fromFallback = await _tryFetch(_fetchFallback, wanted);
-    if (fromFallback != null) return fromFallback;
+    // A source answered but lists none of these codes. That is not a failure:
+    // the caller has to see them absent — which is how they end up in
+    // `missingRateCodes` and stop forcing a refetch — rather than an exception.
+    if (anyAnswered) return const {};
 
     throw const RateFetchException('Не удалось получить курсы валют');
   }
 
-  /// Runs one source, swallowing its failure so the next can be tried.
+  /// Runs one source. `null` means it failed — network error, non-200, bad JSON,
+  /// unexpected shape are all equivalent here. An empty map is a different
+  /// answer: the source replied and simply knows none of [wanted].
   Future<Map<String, double>?> _tryFetch(
     Future<Map<String, double>> Function(Set<String>) source,
     Set<String> wanted,
   ) async {
     try {
-      final rates = await source(wanted);
-      return rates.isEmpty ? null : rates;
+      return await source(wanted);
     } on Object {
-      // Network error, non-200, bad JSON, unexpected shape — all equivalent here:
-      // this source produced nothing usable, so fall through to the next one.
       return null;
     }
   }

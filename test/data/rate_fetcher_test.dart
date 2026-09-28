@@ -132,6 +132,37 @@ void main() {
       },
     );
 
+    test('an empty answer from both sources is not a failure', () async {
+      // Both answer with HTTP 200 and valid JSON, neither lists the code. That
+      // is a fact about the currency, not a failed fetch — the caller has to
+      // see it absent so it lands in `missingRateCodes`.
+      final client = _FakeClient({
+        RateFetcher.primaryUrl: _primaryOk({'EUR': 0.92}),
+        RateFetcher.fallbackUrl: _fallbackOk({'EUR': 0.92}),
+      });
+
+      expect(await RateFetcher(client).fetch(['XXX']), isEmpty);
+      // Both were consulted before concluding nobody knows it.
+      expect(client.requested, [
+        RateFetcher.primaryUrl,
+        RateFetcher.fallbackUrl,
+      ]);
+    });
+
+    test('the fallback is whole-source, not per-code', () async {
+      // A useful primary response wins outright: a code it happens to lack is
+      // absent from the result even though the fallback lists it.
+      final client = _FakeClient({
+        RateFetcher.primaryUrl: _primaryOk({'RUB': 84.0}),
+        RateFetcher.fallbackUrl: _fallbackOk({'RUB': 84.0, 'KZT': 500.0}),
+      });
+
+      final rates = await RateFetcher(client).fetch(['RUB', 'KZT']);
+
+      expect(rates, {'RUB': 84.0});
+      expect(client.requested, [RateFetcher.primaryUrl]);
+    });
+
     test('throws when both sources fail', () async {
       final client = _FakeClient(const {});
 

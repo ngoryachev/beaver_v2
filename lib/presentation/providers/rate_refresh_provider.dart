@@ -30,6 +30,11 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
   /// fresh request for ever; they wait for the normal staleness window instead.
   final Set<String> _unfetchable = {};
 
+  /// When a fetch last completed, whatever it stored. Rows alone cannot date the
+  /// last check: a user whose currencies are all unknown stores nothing, so
+  /// there would be no timestamp and the staleness window could never close.
+  DateTime? _lastFetchAt;
+
   @override
   AsyncValue<void> build() => const AsyncValue.data(null);
 
@@ -47,13 +52,20 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
     // A currency with no row at all beats the staleness window: adding a EUR
     // account should not leave «Нет курса» on screen for up to a day just
     // because some other currency was fetched an hour ago.
-    final latest = ref.read(latestAutoRateAtProvider);
+    final latest = _latest(ref.read(latestAutoRateAtProvider), _lastFetchAt);
     if (!_hasUnratedCurrency() &&
         latest != null &&
         now.toUtc().difference(latest) < rateStalenessThreshold) {
       return;
     }
     await refreshNow();
+  }
+
+  /// The more recent of two optional instants.
+  static DateTime? _latest(DateTime? a, DateTime? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return a.isAfter(b) ? a : b;
   }
 
   /// Whether some currency in use has no stored rate and is worth asking for.
@@ -93,6 +105,7 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
               .where((code) => code != 'USD' && !fetched.containsKey(code)),
         );
       await ref.read(ratesProvider.notifier).applyAuto(fetched);
+      _lastFetchAt = DateTime.now().toUtc();
       state = const AsyncValue.data(null);
     } catch (error, stack) {
       state = AsyncValue.error(error, stack);
