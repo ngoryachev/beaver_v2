@@ -36,7 +36,19 @@ class RateRefreshController extends Notifier<AsyncValue<void>> {
   DateTime? _lastFetchAt;
 
   @override
-  AsyncValue<void> build() => const AsyncValue.data(null);
+  AsyncValue<void> build() {
+    // Every field above is one user's refresh history — when they sign out and
+    // somebody else signs in, none of it describes the new account. Watching the
+    // id alone would not be enough: Riverpod re-runs `build` on the *same*
+    // notifier instance, so the fields survive unless they are cleared by hand,
+    // and a timestamp left by the previous user would hold the staleness window
+    // shut for up to a day.
+    ref.watch(currentUserIdProvider);
+    _lastCheck = null;
+    _lastFetchAt = null;
+    _unfetchable.clear();
+    return const AsyncValue.data(null);
+  }
 
   /// Refreshes if the rates are stale. Called on start-up and on resume.
   Future<void> refreshIfStale() async {
