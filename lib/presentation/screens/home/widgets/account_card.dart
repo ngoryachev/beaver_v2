@@ -9,10 +9,17 @@ class AccountCard extends StatelessWidget {
   final Account account;
   final VoidCallback onTap;
 
-  /// Balance converted into the base currency, or `null` when no rate is known.
-  /// Shown as a subtitle only when it differs from the account's own currency.
+  /// Balance converted into the base currency, or `null` when it could not be
+  /// converted. Shown as a subtitle only when it differs from the account's own
+  /// currency.
   final int? baseAmount;
   final String baseCurrency;
+
+  /// Whether a rate exists for both sides. Tells the two reasons [baseAmount]
+  /// can be `null` apart: a missing rate the user can go and set, versus an
+  /// amount too large to express — saying «Нет курса» for the second would send
+  /// them to fix something that is not broken.
+  final bool rateKnown;
 
   /// The active scenario leaves this account out of the total. The card stays
   /// tappable — the balance still needs editing — but is dimmed and labelled, so
@@ -25,6 +32,7 @@ class AccountCard extends StatelessWidget {
     required this.onTap,
     required this.baseAmount,
     required this.baseCurrency,
+    this.rateKnown = true,
     this.excluded = false,
   });
 
@@ -35,9 +43,11 @@ class AccountCard extends StatelessWidget {
     final isForeign = currency.code != baseCurrency.toUpperCase();
     final notes = <String>[
       if (isForeign)
-        baseAmount == null
-            ? 'Нет курса ${currency.code}'
-            : '≈ ${formatMoney(baseAmount!, baseCurrency)}',
+        baseAmount != null
+            ? '≈ ${formatMoney(baseAmount!, baseCurrency)}'
+            : rateKnown
+            ? 'Слишком большая сумма'
+            : 'Нет курса ${currency.code}',
       if (excluded) 'Не в сценарии',
     ];
 

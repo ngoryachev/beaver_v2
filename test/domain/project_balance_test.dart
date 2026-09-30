@@ -635,7 +635,7 @@ void main() {
 
   // The total must never quietly shed money. `convertMinor` returns null both
   // for a rate it lacks and for a product too large to represent, and the second
-  // case used to leave `missingRateCodes` empty — so the amount vanished from
+  // case used to leave both warning sets empty — so the amount vanished from
   // the total with nothing on screen to say so.
   group('nothing leaves the total unrecorded', () {
     // 10 000 000 000 000,00 $ is inside `Money.maxMinor`, so the app accepts and
@@ -656,12 +656,10 @@ void main() {
       );
 
       expect(result.startBalance, 0, reason: 'it cannot be counted');
-      expect(
-        result.missingRateCodes,
-        isNotEmpty,
-        reason: 'but the user has to be told it was left out',
-      );
-      expect(result.missingRateCodes, contains('USD'));
+      // Reported as unconvertible, not as unrated: USD has a rate here, and
+      // «Без курса» would send the user to fix something that is not broken.
+      expect(result.unconvertibleCodes, contains('USD'));
+      expect(result.missingRateCodes, isEmpty);
     });
 
     test('an unconvertible operation is named instead of dropped', () {
@@ -675,7 +673,34 @@ void main() {
       );
 
       expect(result.endBalance, result.startBalance);
-      expect(result.missingRateCodes, contains('USD'));
+      expect(result.unconvertibleCodes, contains('USD'));
+      expect(result.missingRateCodes, isEmpty);
+    });
+
+    test('an absent rate and an oversized amount are reported apart', () {
+      // Both leave the amount out of the total, but only one is fixed by
+      // setting a rate — so «Без курса» must not be shown for the other.
+      final result = projectBalance(
+        accounts: [
+          // No rate at all for KZT.
+          _account(id: 'a1', currencyCode: 'KZT', balance: 500000),
+          // USD has a rate; the amount is simply past what can be expressed.
+          _account(
+            id: 'a2',
+            currencyCode: 'USD',
+            balance: hugeButAccepted,
+            sortOrder: 1,
+          ),
+        ],
+        ops: const [],
+        from: DateTime(2026, 3, 1),
+        to: DateTime(2026, 3, 2),
+        rates: rates,
+        baseCurrency: 'RUB',
+      );
+
+      expect(result.missingRateCodes, {'KZT'});
+      expect(result.unconvertibleCodes, {'USD'});
     });
 
     test(
@@ -705,7 +730,9 @@ void main() {
                 result.startBalance != 100000 ||
                 table.convertMinor(balance, from: 'USD', to: 'RUB') == 0;
             expect(
-              counted || result.missingRateCodes.contains('USD'),
+              counted ||
+                  result.missingRateCodes.contains('USD') ||
+                  result.unconvertibleCodes.contains('USD'),
               isTrue,
               reason: 'balance $balance at $usdRate/USD was silently dropped',
             );

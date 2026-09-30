@@ -13,6 +13,14 @@ Future<void> main() async {
   // only knows `en_US` and every formatted date would be English.
   initializeDateFormatting('ru');
 
+  if (!Env.isConfigured) {
+    throw StateError(
+      'Не задана конфигурация Supabase. Запускайте с '
+      '--dart-define-from-file=.env.json — скопируйте .env.json.example '
+      'и впишите SUPABASE_ANON_KEY (см. README).',
+    );
+  }
+
   await Supabase.initialize(
     url: Env.supabaseUrl,
     // `publishableKey` is the current name for what self-hosted Supabase still

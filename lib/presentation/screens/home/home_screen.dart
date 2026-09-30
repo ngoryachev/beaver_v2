@@ -123,6 +123,8 @@ class _HomeBody extends ConsumerWidget {
                   from: account.currencyCode,
                   to: baseCurrency,
                 ),
+                rateKnown:
+                    rates.has(account.currencyCode) && rates.has(baseCurrency),
                 // The total above is scenario-filtered; marking the accounts it
                 // leaves out is what keeps the two from silently disagreeing.
                 excluded:
@@ -191,6 +193,18 @@ class _TotalCard extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Без курса: ${projection.missingRateCodes.join(', ')}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ],
+                // Separate line: a rate *is* set for these, so «Без курса»
+                // would send the user to fix something that is not broken.
+                if (projection.unconvertibleCodes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Слишком большая сумма: '
+                    '${projection.unconvertibleCodes.join(', ')}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.error,
                     ),

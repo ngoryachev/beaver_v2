@@ -51,18 +51,20 @@ class ProjectionResult {
   /// Date [minBalance] is first reached.
   final DateTime minDate;
 
-  /// Currency codes whose amounts could not be converted into the base currency.
-  /// They are excluded from the totals rather than counted as 0, so the UI can
-  /// warn instead of quietly lying.
+  /// Currency codes with no usable rate. Their amounts are excluded from the
+  /// totals rather than counted as 0, so the UI can warn instead of quietly
+  /// lying.
   ///
   /// A conversion needs a rate on both sides, so this names whichever side is
   /// actually missing: if the *base* currency is the unrated one, blaming every
   /// other currency would point the user at the wrong row in settings.
-  ///
-  /// A conversion can also fail with both rates present, when the result is too
-  /// large to represent. The currency is named either way — what matters is that
-  /// no amount silently leaves the total.
   final Set<String> missingRateCodes;
+
+  /// Currency codes whose amounts have a rate but are too large to express in
+  /// the base currency. Also excluded from the totals, but kept apart from
+  /// [missingRateCodes]: telling the user a rate is missing when one is set
+  /// would send them to fix the wrong thing.
+  final Set<String> unconvertibleCodes;
 
   const ProjectionResult({
     required this.startBalance,
@@ -72,6 +74,7 @@ class ProjectionResult {
     required this.minBalance,
     required this.minDate,
     required this.missingRateCodes,
+    required this.unconvertibleCodes,
   });
 }
 
@@ -93,6 +96,7 @@ ProjectionResult projectBalance({
   final effectiveTo = windowTo.isBefore(windowFrom) ? windowFrom : windowTo;
   final base = baseCurrency.toUpperCase();
   final missing = <String>{};
+  final unconvertible = <String>{};
 
   var startBalance = 0;
   for (final account in accounts) {
@@ -103,7 +107,7 @@ ProjectionResult projectBalance({
       to: base,
     );
     if (converted == null) {
-      missing.addAll(_blameFor(rates, account.currencyCode, base));
+      _recordFailure(rates, account.currencyCode, base, missing, unconvertible);
       continue;
     }
     startBalance += converted;
@@ -124,7 +128,7 @@ ProjectionResult projectBalance({
       to: base,
     );
     if (converted == null) {
-      missing.addAll(_blameFor(rates, op.currencyCode, base));
+      _recordFailure(rates, op.currencyCode, base, missing, unconvertible);
     }
 
     for (final date in dates) {
@@ -173,18 +177,29 @@ ProjectionResult projectBalance({
     minBalance: minBalance,
     minDate: minDate,
     missingRateCodes: missing,
+    unconvertibleCodes: unconvertible,
   );
 }
 
-/// Currencies to blame when a conversion of [code] into [base] fails.
+/// Records a failed conversion of [code] into [base] under the right reason.
 ///
-/// Normally that is whichever side has no rate. When both rates are present the
-/// failure was representability — the product is past [Money.maxMinor] — and
-/// naming nothing would drop the amount from the total with no warning at all,
-/// which is the one outcome worse than an imprecise message.
-Set<String> _blameFor(RateTable rates, String code, String base) {
+/// Normally a rate is missing on one side. When both are present the failure was
+/// representability — the product is past [Money.maxMinor] — and the two must
+/// stay apart: either way the amount leaves the total, but only one of them is
+/// fixed by setting a rate.
+void _recordFailure(
+  RateTable rates,
+  String code,
+  String base,
+  Set<String> missing,
+  Set<String> unconvertible,
+) {
   final unrated = rates.missing([code, base]);
-  return unrated.isEmpty ? {code.toUpperCase()} : unrated;
+  if (unrated.isEmpty) {
+    unconvertible.add(code.toUpperCase());
+  } else {
+    missing.addAll(unrated);
+  }
 }
 
 /// Currencies the base currency is allowed to be: those of the non-archived

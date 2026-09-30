@@ -37,7 +37,11 @@ void main() {
   );
 
   test('the balance editor accepts the amount in the first place', () {
-    expect(typed, isNotNull, reason: 'otherwise this whole case is unreachable');
+    expect(
+      typed,
+      isNotNull,
+      reason: 'otherwise this whole case is unreachable',
+    );
     expect(rates.convertMinor(typed!.minor, from: 'USD', to: 'RUB'), isNull);
   });
 
@@ -61,12 +65,19 @@ void main() {
 
     // Either it converts, or it says it could not. Reporting «Всего 0 ₽» with no
     // warning at all is the one outcome the UI cannot recover from.
+    //
+    // The reason is split across two sets — a rate that is absent versus an
+    // amount too large for one that is present — because the UI offers a
+    // different remedy for each. Silence in *both* is the failure.
     expect(
-      result.startBalance == 0 && result.missingRateCodes.isEmpty,
+      result.startBalance == 0 &&
+          result.missingRateCodes.isEmpty &&
+          result.unconvertibleCodes.isEmpty,
       isFalse,
       reason:
           'startBalance=${result.startBalance}, '
-          'missingRateCodes=${result.missingRateCodes}',
+          'missingRateCodes=${result.missingRateCodes}, '
+          'unconvertibleCodes=${result.unconvertibleCodes}',
     );
   });
 
@@ -93,11 +104,13 @@ void main() {
 
     expect(
       result.endBalance == result.startBalance &&
-          result.missingRateCodes.isEmpty,
+          result.missingRateCodes.isEmpty &&
+          result.unconvertibleCodes.isEmpty,
       isFalse,
       reason:
           'endBalance=${result.endBalance}, '
-          'missingRateCodes=${result.missingRateCodes}',
+          'missingRateCodes=${result.missingRateCodes}, '
+          'unconvertibleCodes=${result.unconvertibleCodes}',
     );
   });
 }

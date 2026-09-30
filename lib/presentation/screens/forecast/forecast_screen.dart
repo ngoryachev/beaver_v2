@@ -134,6 +134,38 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
                     ),
                   ),
                 ),
+              // Kept apart from the missing-rate card: these currencies have
+              // a rate, the amount is simply past what can be expressed.
+              if (projection.unconvertibleCodes.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Card(
+                    color: theme.colorScheme.errorContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber,
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Слишком большие суммы в '
+                              '${projection.unconvertibleCodes.join(', ')} — '
+                              'их не удалось пересчитать, и в прогноз они не '
+                              'вошли.',
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
