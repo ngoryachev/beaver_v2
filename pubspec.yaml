@@ -1,0 +1,34 @@
+name: beaver_v2
+description: "Beaver v2 — учёт счетов и прогноз баланса."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Russian Material strings (date picker, text-selection menu) and the
+  # date/number symbols `intl` formats with.
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  supabase_flutter: ^2.8.0
+  flutter_riverpod: ^2.6.0
+  go_router: ^14.0.0
+  uuid: ^4.0.0
+  # Task asked for ^0.19; flutter_localizations (needed for the Russian date
+  # picker) pins intl to 0.20.2, so the constraint is raised to match.
+  intl: ^0.20.2
+  fl_chart: ^0.69.0
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
