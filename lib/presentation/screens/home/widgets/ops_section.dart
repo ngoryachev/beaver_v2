@@ -9,6 +9,7 @@ import '../../../../router.dart';
 import '../../../format/money_format.dart';
 import '../../../providers/ops_provider.dart';
 import '../../../providers/rates_provider.dart';
+import '../../../providers/scenarios_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/write_guard.dart';
 import '../../ops/op_labels.dart';
@@ -99,6 +100,9 @@ class _Groups extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final baseCurrency = ref.watch(baseCurrencyProvider);
     final rates = ref.watch(rateTableProvider);
+    final scenario = ref.watch(activeScenarioProvider);
+    bool inScenario(PlannedOp op) =>
+        scenario == null || scenario.allowsOp(op.id);
 
     // Enum declaration order drives the section order, so it is stable across
     // rebuilds regardless of how the rows came back from the database.
@@ -114,7 +118,10 @@ class _Groups extends ConsumerWidget {
           if (grouped[category] != null) ...[
             _GroupHeader(
               category: category,
-              ops: grouped[category]!,
+              // Scenario-filtered, like the total and the forecast card above:
+              // an estimate counting operations the forecast deliberately
+              // leaves out would silently disagree with them.
+              ops: grouped[category]!.where(inScenario).toList(),
               expanded: expanded.contains(category),
               onToggle: () => onToggle(category),
               rates: rates,
@@ -122,7 +129,15 @@ class _Groups extends ConsumerWidget {
             ),
             if (expanded.contains(category))
               for (final op in grouped[category]!)
-                _OpTile(op: op, rates: rates, baseCurrency: baseCurrency),
+                _OpTile(
+                  op: op,
+                  rates: rates,
+                  baseCurrency: baseCurrency,
+                  // Marked rather than hidden, exactly as `AccountCard` marks
+                  // an excluded account: the row still needs editing, it just
+                  // must not look like it is part of the figures.
+                  excluded: !inScenario(op),
+                ),
           ],
       ],
     );
@@ -131,6 +146,8 @@ class _Groups extends ConsumerWidget {
 
 class _GroupHeader extends StatelessWidget {
   final OpCategory category;
+
+  /// The group's operations, already filtered by the active scenario.
   final List<PlannedOp> ops;
   final bool expanded;
   final VoidCallback onToggle;
@@ -210,7 +227,12 @@ class _GroupHeader extends StatelessWidget {
         ? '−'
         : '';
     final amount = formatMoneyCompact(total.amountMinor.abs(), baseCurrency);
-    final suffix = total.partial ? ' · нет курса' : '';
+    // A missing rate first: it is the half the user can go and fix.
+    final suffix = total.missingRate
+        ? ' · нет курса'
+        : total.unconvertible
+        ? ' · слишком большая сумма'
+        : '';
     return '$sign$amount / мес$suffix';
   }
 }
@@ -220,10 +242,14 @@ class _OpTile extends ConsumerWidget {
   final RateTable rates;
   final String baseCurrency;
 
+  /// The active scenario leaves this operation out of the figures above.
+  final bool excluded;
+
   const _OpTile({
     required this.op,
     required this.rates,
     required this.baseCurrency,
+    this.excluded = false,
   });
 
   @override
@@ -268,49 +294,52 @@ class _OpTile extends ConsumerWidget {
           failureMessage: 'Не удалось удалить операцию',
         );
       },
-      child: ListTile(
-        onTap: () => context.push(Routes.opEdit, extra: op.id),
-        title: Text(
-          op.title,
-          style: TextStyle(
-            // A disabled operation is still listed, just visibly inert.
-            color: op.enabled ? null : theme.disabledColor,
+      child: Opacity(
+        opacity: excluded ? 0.5 : 1,
+        child: ListTile(
+          onTap: () => context.push(Routes.opEdit, extra: op.id),
+          title: Text(
+            op.title,
+            style: TextStyle(
+              // A disabled operation is still listed, just visibly inert.
+              color: op.enabled ? null : theme.disabledColor,
+            ),
           ),
-        ),
-        subtitle: Text(_subtitle()),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '${isIncome ? '+' : '−'}'
-                  '${formatMoney(op.amount, op.currencyCode)}',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: op.enabled
-                        ? (isIncome
-                              ? Colors.green.shade700
-                              : theme.colorScheme.error)
-                        : theme.disabledColor,
+          subtitle: Text(_subtitle()),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${isIncome ? '+' : '−'}'
+                    '${formatMoney(op.amount, op.currencyCode)}',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: op.enabled
+                          ? (isIncome
+                                ? Colors.green.shade700
+                                : theme.colorScheme.error)
+                          : theme.disabledColor,
+                    ),
                   ),
-                ),
-                if (_baseNote() case final note?)
-                  Text(note, style: theme.textTheme.bodySmall),
-              ],
-            ),
-            Switch(
-              value: op.enabled,
-              onChanged: (enabled) => runWrite(
-                context,
-                () => ref
-                    .read(opsProvider.notifier)
-                    .setEnabled(op, enabled: enabled),
-                failureMessage: 'Не удалось переключить операцию',
+                  if (_baseNote() case final note?)
+                    Text(note, style: theme.textTheme.bodySmall),
+                ],
               ),
-            ),
-          ],
+              Switch(
+                value: op.enabled,
+                onChanged: (enabled) => runWrite(
+                  context,
+                  () => ref
+                      .read(opsProvider.notifier)
+                      .setEnabled(op, enabled: enabled),
+                  failureMessage: 'Не удалось переключить операцию',
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -345,6 +374,7 @@ class _OpTile extends ConsumerWidget {
       parts.add('с ${formatDate(op.startDate)}');
       if (op.endDate != null) parts.add('по ${formatDate(op.endDate!)}');
     }
+    if (excluded) parts.add('Не в сценарии');
     return parts.join(' · ');
   }
 }

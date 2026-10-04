@@ -24,13 +24,26 @@ class MonthlyTotal {
   /// Signed: negative when the expenses outweigh the income.
   final int amountMinor;
 
-  /// At least one operation was left out because its amount could not be
-  /// expressed in the base currency — almost always a missing rate, or else a
-  /// sum too large to hold. The figure is then a partial one, and the UI has to
-  /// say so rather than pass it off as the whole truth.
-  final bool partial;
+  /// At least one operation was left out because its currency has no usable
+  /// rate. Kept apart from [unconvertible] for the same reason
+  /// `ProjectionResult` keeps `missingRateCodes` and `unconvertibleCodes`
+  /// apart: telling the user a rate is missing when one is set sends them to
+  /// fix the wrong thing.
+  final bool missingRate;
 
-  const MonthlyTotal({required this.amountMinor, required this.partial});
+  /// At least one amount — or the sum itself — has a rate but is past what can
+  /// be expressed in the base currency.
+  final bool unconvertible;
+
+  const MonthlyTotal({
+    required this.amountMinor,
+    this.missingRate = false,
+    this.unconvertible = false,
+  });
+
+  /// Something was left out, so the figure is less than the whole truth and the
+  /// UI has to say so.
+  bool get partial => missingRate || unconvertible;
 }
 
 /// Sums [ops] into a per-month figure in [baseCurrency].
@@ -54,7 +67,8 @@ MonthlyTotal monthlyTotal({
   );
 
   var total = 0.0;
-  var partial = false;
+  var missingRate = false;
+  var unconvertible = false;
 
   for (final op in ops) {
     if (!op.enabled) continue;
@@ -75,7 +89,14 @@ MonthlyTotal monthlyTotal({
       to: baseCurrency,
     );
     if (converted == null) {
-      partial = true;
+      // The two reasons `convertMinor` gives up, told apart the same way
+      // `AccountCard` tells them apart: no rate to convert with, or an amount
+      // too large to express with the rate there is.
+      if (rates.has(op.currencyCode) && rates.has(baseCurrency)) {
+        unconvertible = true;
+      } else {
+        missingRate = true;
+      }
       continue;
     }
     total += converted * factor;
@@ -85,7 +106,15 @@ MonthlyTotal monthlyTotal({
   // held exactly on the web, where an `int` is a double, and `.round()` would
   // throw on a non-finite one.
   if (!total.isFinite || total.abs() > Money.maxMinor) {
-    return MonthlyTotal(amountMinor: 0, partial: true);
+    return MonthlyTotal(
+      amountMinor: 0,
+      missingRate: missingRate,
+      unconvertible: true,
+    );
   }
-  return MonthlyTotal(amountMinor: total.round(), partial: partial);
+  return MonthlyTotal(
+    amountMinor: total.round(),
+    missingRate: missingRate,
+    unconvertible: unconvertible,
+  );
 }

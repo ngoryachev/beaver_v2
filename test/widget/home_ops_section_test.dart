@@ -10,6 +10,7 @@ import 'package:beaver_v2/domain/models/scenario.dart';
 import 'package:beaver_v2/domain/models/user_settings.dart';
 import 'package:beaver_v2/presentation/format/money_format.dart';
 import 'package:beaver_v2/presentation/providers/repo_providers.dart';
+import 'package:beaver_v2/presentation/providers/scenarios_provider.dart';
 import 'package:beaver_v2/presentation/screens/home/home_screen.dart';
 import 'package:beaver_v2/presentation/screens/home/widgets/ops_section.dart';
 import 'package:flutter/material.dart';
@@ -59,6 +60,8 @@ Future<InMemoryPlannedOpsRepository> _pumpHome(
   List<PlannedOp> ops, {
   List<Rate> rates = const [],
   Size size = const Size(1200, 3000),
+  List<Scenario>? scenarios,
+  String? activeScenarioId,
 }) async {
   final repository = InMemoryPlannedOpsRepository(ops);
   tester.view.physicalSize = size;
@@ -82,10 +85,20 @@ Future<InMemoryPlannedOpsRepository> _pumpHome(
         ),
         plannedOpsRepositoryProvider.overrideWithValue(repository),
         scenariosRepositoryProvider.overrideWithValue(
-          InMemoryScenariosRepository([
-            Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
-          ]),
+          InMemoryScenariosRepository(
+            scenarios ??
+                [
+                  Scenario(
+                    id: 's1',
+                    userId: _userId,
+                    name: 'Все',
+                    isDefault: true,
+                  ),
+                ],
+          ),
         ),
+        if (activeScenarioId != null)
+          activeScenarioIdProvider.overrideWith((ref) => activeScenarioId),
         ratesRepositoryProvider.overrideWithValue(
           InMemoryRatesRepository(rates),
         ),
@@ -318,6 +331,77 @@ void main() {
     });
   });
 
+  group('an active scenario', () {
+    testWidgets('is left out of the estimate and marked on the row', (
+      tester,
+    ) async {
+      // The total and the forecast card above the section are
+      // scenario-filtered; an estimate counting what they leave out would
+      // silently disagree with them.
+      await _pumpHome(
+        tester,
+        [
+          _op(
+            id: 'o1',
+            title: 'Продукты',
+            amount: 1500000,
+            category: OpCategory.food,
+          ),
+          _op(
+            id: 'o2',
+            title: 'Кафе',
+            amount: 500000,
+            category: OpCategory.food,
+          ),
+        ],
+        scenarios: [
+          Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
+          Scenario(
+            id: 's2',
+            userId: _userId,
+            name: 'Без кафе',
+            disabledOpIds: const {'o2'},
+          ),
+        ],
+        activeScenarioId: 's2',
+      );
+
+      // 15 000 ₽ only: «Кафе» is not part of this scenario.
+      expect(
+        find.textContaining('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
+        findsOneWidget,
+      );
+
+      await _expand(tester, 'Еда');
+      // Still listed and still editable, just marked — as `AccountCard` marks
+      // an account the scenario excludes.
+      expect(find.text('Кафе'), findsOneWidget);
+      expect(find.textContaining('Не в сценарии'), findsOneWidget);
+    });
+
+    testWidgets('counts everything when no scenario excludes anything', (
+      tester,
+    ) async {
+      await _pumpHome(tester, [
+        _op(
+          id: 'o1',
+          title: 'Продукты',
+          amount: 1500000,
+          category: OpCategory.food,
+        ),
+        _op(id: 'o2', title: 'Кафе', amount: 500000, category: OpCategory.food),
+      ]);
+
+      expect(
+        find.textContaining('−${formatMoneyCompact(2000000, 'RUB')} / мес'),
+        findsOneWidget,
+      );
+
+      await _expand(tester, 'Еда');
+      expect(find.textContaining('Не в сценарии'), findsNothing);
+    });
+  });
+
   group('a foreign amount', () {
     testWidgets('shows the base-currency equivalent', (tester) async {
       await _pumpHome(
@@ -515,6 +599,29 @@ void main() {
     expect(find.text('Коммунальные платежи'), findsOneWidget);
     expect(find.textContaining('нет курса'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an unrepresentable estimate is not blamed on a missing rate', (
+    tester,
+  ) async {
+    await _pumpHome(
+      tester,
+      [
+        _op(
+          id: 'o1',
+          title: 'Хостинг',
+          amount: 100000,
+          category: OpCategory.software,
+          code: 'XYZ',
+        ),
+      ],
+      // A rate is set for both sides; it just drives the amount past what can
+      // be expressed, which «нет курса» would misdescribe.
+      rates: [_rate('RUB', 90), _rate('XYZ', 1e-300)],
+    );
+
+    expect(find.textContaining('слишком большая сумма'), findsOneWidget);
+    expect(find.textContaining('нет курса'), findsNothing);
   });
 
   group('swipe to delete', () {

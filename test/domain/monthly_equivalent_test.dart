@@ -204,7 +204,37 @@ void main() {
 
       // The convertible part is still summed, and the gap is flagged.
       expect(total.amountMinor, -100000);
+      expect(total.missingRate, isTrue);
+      // A rate is missing, not past what can be expressed: the UI says so with
+      // its own wording, so the two must not be conflated.
+      expect(total.unconvertible, isFalse);
       expect(total.partial, isTrue);
+    });
+
+    test('an amount too large to express is not reported as a missing rate', () {
+      // A rate is set for both sides, it just drives the amount past what an
+      // `int` holds exactly — the same case `AccountCard` calls «Слишком
+      // большая сумма» rather than «Нет курса».
+      final total = _total(
+        [_op(amount: 100000), _op(amount: 100000, code: 'XYZ')],
+        rates: [_rate('RUB', 90), _rate('XYZ', 1e-300)],
+      );
+
+      expect(total.amountMinor, -100000);
+      expect(total.unconvertible, isTrue);
+      expect(total.missingRate, isFalse);
+      expect(total.partial, isTrue);
+    });
+
+    test('a sum past what can be expressed is flagged, not rounded', () {
+      // Each operation converts fine; it is the total that overflows.
+      final total = _total(
+        List.generate(4, (i) => _op(amount: 3000000000000000)),
+      );
+
+      expect(total.amountMinor, 0);
+      expect(total.unconvertible, isTrue);
+      expect(total.missingRate, isFalse);
     });
   });
 }
