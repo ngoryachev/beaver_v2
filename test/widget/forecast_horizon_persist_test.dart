@@ -175,11 +175,13 @@ void main() {
     expect(_homeForecast(tester), formatMoney(10000000 - 46 * 10000, 'RUB'));
   });
 
-  testWidgets('a stored custom date in the past still opens the picker', (
+  testWidgets('an expired stored date leaves the screen on the default window', (
     tester,
   ) async {
     // Persisting the date means it outlives the session that picked it: by
-    // today it can be in the past, which `showDatePicker` refuses as an
+    // today it can be in the past. Such a horizon is dropped on read, so the
+    // chips are back to the default and «Другая дата» opens a picker whose
+    // initial date is a day it will accept — `showDatePicker` asserts on an
     // `initialDate` before its `firstDate`.
     await _settings.save(
       UserSettings(
@@ -191,13 +193,66 @@ void main() {
     );
 
     await _pump(tester, const ForecastScreen());
-    await tester.tap(
-      find.widgetWithText(FilterChip, formatDate(addDays(_today, -10))),
-    );
+
+    expect(_chipSelected(tester, '+30 дней'), isTrue);
+    expect(find.text(formatDate(addDays(_today, -10))), findsNothing);
+    expect(find.text(formatDate(addDays(_today, 30))), findsOneWidget);
+
+    await tester.tap(find.text('Другая дата'));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.byType(DatePickerDialog), findsOneWidget);
+  });
+
+  testWidgets('a stored custom date in the past is not shown as the horizon', (
+    tester,
+  ) async {
+    // Persisting the date means it outlives the session that picked it. Once it
+    // is behind us `projectionProvider` clamps the window to today, so the card
+    // shows today's balance under a title naming a date that has already gone —
+    // the figure and the date it is labelled with no longer match.
+    final stale = addDays(_today, -10);
+    await _settings.save(
+      UserSettings(
+        userId: _userId,
+        baseCurrency: 'RUB',
+        forecastPreset: ForecastPreset.custom,
+        forecastCustomDate: stale,
+      ),
+    );
+
+    await _pump(tester, const HomeScreen());
+
+    expect(
+      find.text(formatDate(stale)),
+      findsNothing,
+      reason: 'a horizon in the past is not a horizon the card can advertise',
+    );
+  });
+
+  testWidgets('a stored custom date in the past still forecasts something', (
+    tester,
+  ) async {
+    final stale = addDays(_today, -10);
+    await _settings.save(
+      UserSettings(
+        userId: _userId,
+        baseCurrency: 'RUB',
+        forecastPreset: ForecastPreset.custom,
+        forecastCustomDate: stale,
+      ),
+    );
+
+    await _pump(tester, const ForecastScreen());
+
+    // With the window collapsed to a single day there is no curve and no event
+    // list left — the forecast screen goes blank with nothing explaining why.
+    expect(
+      find.text('Слишком короткий период для графика'),
+      findsNothing,
+      reason: 'a stale stored date must not empty out the forecast screen',
+    );
   });
 
   testWidgets('cycling the base currency does not reset the horizon', (

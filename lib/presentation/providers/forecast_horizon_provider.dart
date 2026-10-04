@@ -8,9 +8,16 @@ import 'settings_provider.dart';
 ///
 /// Shared by the forecast screen and the preview card on the home screen, so
 /// picking «+90 дней» in one is reflected in the other — and survives a restart.
+///
+/// A custom date that has already passed is dropped in favour of the default
+/// window: it would otherwise collapse the forecast to a single day — no curve,
+/// no events — under a title naming a date long gone. Normalised on read rather
+/// than rewritten, the same way [baseCurrencyProvider] keeps its own invariant,
+/// so opening the app does not cost a write.
 final forecastHorizonProvider = Provider<ForecastHorizon>((ref) {
   final settings = ref.watch(settingsProvider).valueOrNull;
-  return settings?.forecastHorizon ?? const ForecastHorizon();
+  final stored = settings?.forecastHorizon ?? const ForecastHorizon();
+  return stored.isExpired(DateTime.now()) ? const ForecastHorizon() : stored;
 });
 
 /// The date the projection runs to.

@@ -162,27 +162,31 @@ class _GroupHeader extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
             const SizedBox(width: 8),
+            // The estimate goes under the label rather than beside it: side by
+            // side, «Коммунальные платежи» and «−15 000 ₽ / мес · нет курса»
+            // are wider than a phone, and neither is worth ellipsising to a
+            // stub. Both sit inside the one flexible slot, so the row cannot
+            // overflow however long the label or the text scale get.
             Expanded(
-              child: Text(
-                categoryLabel(category),
-                // «Коммунальные платежи» next to an estimate is wider than a
-                // phone: the label is what gives way, not the figure.
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    categoryLabel(category),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  // Only while collapsed: with the operations in view their own
+                  // amounts say it better than an average does.
+                  if (!expanded)
+                    Text(_monthlyLabel(), style: theme.textTheme.bodySmall),
+                ],
               ),
             ),
-            // Only while collapsed: with the operations in view their own
-            // amounts say it better than an average does.
-            if (!expanded)
-              Text(
-                _monthlyLabel(),
-                softWrap: false,
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.right,
-              ),
+            const SizedBox(width: 8),
             Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 20),
           ],
         ),

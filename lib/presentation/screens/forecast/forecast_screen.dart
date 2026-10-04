@@ -36,9 +36,9 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
   Future<void> _pickCustomDate(ForecastHorizon horizon) async {
     final today = dateOnly(DateTime.now());
     final stored = horizon.customDate;
-    // Now that the date is persisted it outlives the session that picked it, so
-    // by today it may well be in the past — and `showDatePicker` asserts on an
-    // `initialDate` before `firstDate`.
+    // `showDatePicker` asserts on an `initialDate` before `firstDate`, and a
+    // persisted date outlives the session that picked it. `forecastHorizonProvider`
+    // already drops an expired one; this is the picker's own floor.
     final initialDate = stored == null || stored.isBefore(today)
         ? addDays(today, 30)
         : stored;

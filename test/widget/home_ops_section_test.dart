@@ -398,6 +398,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the longest estimate still fits a phone-sized header', (
+    tester,
+  ) async {
+    // The same row as above, minus the rates: the estimate then carries the
+    // «· нет курса» tail, which is the longest the header can ever get. The
+    // category label is `Expanded` and can ellipsise, but the estimate is a
+    // plain `Text` with `softWrap: false`, so nothing gives way on its side.
+    await _pumpHome(
+      tester,
+      [
+        _op(
+          id: 'o1',
+          title: 'Электричество и вода',
+          amount: 1500000,
+          category: OpCategory.utilities,
+        ),
+        _op(
+          id: 'o2',
+          title: 'Хостинг',
+          amount: 199900,
+          category: OpCategory.utilities,
+          code: 'EUR',
+        ),
+      ],
+      size: const Size(390, 844),
+    );
+
+    expect(find.textContaining('нет курса'), findsOneWidget);
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'the collapsed header overflows once the estimate is long',
+    );
+  });
+
   group('swipe to delete', () {
     testWidgets('asks first, then removes the operation', (tester) async {
       final repository = await _pumpHome(tester, [

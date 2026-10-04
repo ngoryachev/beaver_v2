@@ -29,6 +29,18 @@ class ForecastHorizon {
 
   const ForecastHorizon({this.preset = ForecastPreset.plus30, this.customDate});
 
+  /// Whether the stored date is behind us.
+  ///
+  /// A persisted horizon outlives the session that picked it, so a custom date
+  /// is routinely in the past by the next launch — and a window that ends
+  /// before it starts is no forecast at all. `forecastHorizonProvider`
+  /// normalises such a horizon away on read; see it for why nothing is written
+  /// back.
+  bool isExpired(DateTime today) {
+    if (preset != ForecastPreset.custom || customDate == null) return false;
+    return dateOnly(customDate!).isBefore(dateOnly(today));
+  }
+
   /// The date the projection runs to, given today's date.
   ///
   /// Always date-only: `projectionProvider` is a family whose cache is keyed by
