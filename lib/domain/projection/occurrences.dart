@@ -58,17 +58,9 @@ List<DateTime> occurrencesBetween(PlannedOp op, DateTime from, DateTime to) {
         cursor = addDays(cursor, 1);
       }
     case Schedule.weekly:
-      // Align to the first on-cycle day at or after the window start.
-      var cursor = start;
-      if (cursor.isBefore(windowFrom)) {
-        final elapsed = daysBetween(start, windowFrom);
-        final periods = (elapsed / 7).ceil();
-        cursor = addDays(start, periods * 7);
-      }
-      while (!cursor.isAfter(end)) {
-        result.add(cursor);
-        cursor = addDays(cursor, 7);
-      }
+      result.addAll(_everyNDays(start, windowFrom, end, 7));
+    case Schedule.biweekly:
+      result.addAll(_everyNDays(start, windowFrom, end, 14));
     case Schedule.monthly:
       var index = 0;
       // Skip whole months at once instead of walking day by day.
@@ -100,6 +92,30 @@ List<DateTime> occurrencesBetween(PlannedOp op, DateTime from, DateTime to) {
       }
   }
 
+  return result;
+}
+
+/// Dates on a fixed [period]-day cadence anchored at [start], inside
+/// `[windowFrom, end]`. Shared by `weekly` and `biweekly`, which differ only in
+/// the period.
+List<DateTime> _everyNDays(
+  DateTime start,
+  DateTime windowFrom,
+  DateTime end,
+  int period,
+) {
+  // Align to the first on-cycle day at or after the window start.
+  var cursor = start;
+  if (cursor.isBefore(windowFrom)) {
+    final elapsed = daysBetween(start, windowFrom);
+    final periods = (elapsed / period).ceil();
+    cursor = addDays(start, periods * period);
+  }
+  final result = <DateTime>[];
+  while (!cursor.isAfter(end)) {
+    result.add(cursor);
+    cursor = addDays(cursor, period);
+  }
   return result;
 }
 

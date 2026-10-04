@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../domain/models/account.dart';
-import '../../../domain/projection/occurrences.dart';
+import '../../../domain/models/planned_op.dart';
 import '../../../router.dart';
 import '../../format/money_format.dart';
 import '../../providers/accounts_provider.dart';
+import '../../providers/forecast_horizon_provider.dart';
 import '../../providers/projection_provider.dart';
 import '../../providers/rates_provider.dart';
 import '../../providers/scenarios_provider.dart';
@@ -16,9 +17,7 @@ import 'balance_edit_sheet.dart';
 import 'transfer_sheet.dart';
 import 'widgets/account_card.dart';
 import 'widgets/add_account_dialog.dart';
-
-/// How far ahead the home screen's forecast widget looks, in calendar days.
-const homeForecastDays = 30;
+import 'widgets/ops_section.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -35,11 +34,6 @@ class HomeScreen extends ConsumerWidget {
             icon: const Icon(Icons.show_chart),
             tooltip: 'Прогноз',
             onPressed: () => context.push(Routes.forecast),
-          ),
-          IconButton(
-            icon: const Icon(Icons.repeat),
-            tooltip: 'Операции',
-            onPressed: () => context.push(Routes.ops),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -61,14 +55,26 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _HomeBody extends ConsumerWidget {
+class _HomeBody extends ConsumerStatefulWidget {
   final List<Account> accounts;
 
   const _HomeBody({required this.accounts});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final live = accounts.where((account) => !account.archived).toList();
+  ConsumerState<_HomeBody> createState() => _HomeBodyState();
+}
+
+class _HomeBodyState extends ConsumerState<_HomeBody> {
+  /// Categories the user has opened. Empty — everything collapsed — is the
+  /// default: the section then reads as a per-category budget rather than as a
+  /// long list the accounts above have to scroll past.
+  final _expanded = <OpCategory>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final live = widget.accounts
+        .where((account) => !account.archived)
+        .toList();
     final baseCurrency = ref.watch(baseCurrencyProvider);
     final rates = ref.watch(rateTableProvider);
     final scenario = ref.watch(activeScenarioProvider);
@@ -115,24 +121,100 @@ class _HomeBody extends ConsumerWidget {
             )
           else
             for (final account in live)
-              AccountCard(
+              _DismissibleAccount(
                 account: account,
-                baseCurrency: baseCurrency,
-                baseAmount: rates.convertMinor(
-                  account.balance,
-                  from: account.currencyCode,
-                  to: baseCurrency,
+                child: AccountCard(
+                  account: account,
+                  baseCurrency: baseCurrency,
+                  baseAmount: rates.convertMinor(
+                    account.balance,
+                    from: account.currencyCode,
+                    to: baseCurrency,
+                  ),
+                  rateKnown:
+                      rates.has(account.currencyCode) &&
+                      rates.has(baseCurrency),
+                  // The total above is scenario-filtered; marking the accounts
+                  // it leaves out is what keeps the two from silently
+                  // disagreeing.
+                  excluded:
+                      scenario != null && !scenario.allowsAccount(account.id),
+                  onTap: () => BalanceEditSheet.show(context, account),
                 ),
-                rateKnown:
-                    rates.has(account.currencyCode) && rates.has(baseCurrency),
-                // The total above is scenario-filtered; marking the accounts it
-                // leaves out is what keeps the two from silently disagreeing.
-                excluded:
-                    scenario != null && !scenario.allowsAccount(account.id),
-                onTap: () => BalanceEditSheet.show(context, account),
               ),
+          OpsSection(
+            expanded: _expanded,
+            onToggle: (category) => setState(
+              () => _expanded.contains(category)
+                  ? _expanded.remove(category)
+                  : _expanded.add(category),
+            ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// Swipe left on an account card to delete it, with a dialog first.
+///
+/// Deleting is deliberately harder to reach than archiving (one tap in
+/// settings): the balance goes with the account, and the planned operations
+/// pointing at it are detached by `ON DELETE SET NULL` rather than removed.
+class _DismissibleAccount extends ConsumerWidget {
+  final Account account;
+  final Widget child;
+
+  const _DismissibleAccount({required this.account, required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return Dismissible(
+      key: ValueKey('account-${account.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        color: theme.colorScheme.errorContainer,
+        child: Icon(
+          Icons.delete_outline,
+          color: theme.colorScheme.onErrorContainer,
+        ),
+      ),
+      confirmDismiss: (_) async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Удалить счёт?'),
+            content: Text(
+              '${account.name} · '
+              '${formatMoney(account.balance, account.currencyCode)}\n\n'
+              'Остаток исчезнет из итога. Привязанные операции останутся, '
+              'но потеряют привязку и станут «Любой счёт».',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Удалить'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !context.mounted) return false;
+        return runWrite(
+          context,
+          () => ref.read(accountsProvider.notifier).delete(account.id),
+          failureMessage: 'Не удалось удалить счёт',
+        );
+      },
+      child: child,
     );
   }
 }
@@ -234,8 +316,11 @@ class _TotalCard extends ConsumerWidget {
   }
 }
 
-/// "In 30 days" — the one number that makes the forecast worth having on the home
-/// screen, plus a warning when the balance dips below zero before then.
+/// The one forecast number worth having on the home screen, plus a warning when
+/// the balance dips below zero before then.
+///
+/// The horizon is whatever was last chosen on the forecast screen — the title
+/// names it, so the figure can never be read against the wrong date.
 class _ForecastPreviewCard extends ConsumerWidget {
   const _ForecastPreviewCard();
 
@@ -243,12 +328,10 @@ class _ForecastPreviewCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final baseCurrency = ref.watch(baseCurrencyProvider);
-    // Keyed by a calendar date, not a timestamp: `projectionProvider` is a
-    // family whose cache is keyed by the argument, so a raw `DateTime.now()`
-    // would leave one dead projection behind on every rebuild. Calendar
-    // arithmetic, so the horizon is still 30 days across a DST transition.
-    final target = addDays(dateOnly(DateTime.now()), homeForecastDays);
-    final projection = ref.watch(projectionProvider(target));
+    final horizon = ref.watch(forecastHorizonProvider);
+    final projection = ref.watch(
+      projectionProvider(ref.watch(forecastTargetDateProvider)),
+    );
     final goesNegative = projection.minBalance < 0;
 
     return Padding(
@@ -270,7 +353,10 @@ class _ForecastPreviewCard extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Через 30 дней', style: theme.textTheme.titleSmall),
+                      Text(
+                        horizonLabel(horizon),
+                        style: theme.textTheme.titleSmall,
+                      ),
                       const SizedBox(height: 2),
                       Text(
                         formatMoney(projection.endBalance, baseCurrency),

@@ -122,6 +122,38 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
     if (ok) context.pop();
   }
 
+  /// Deleting from the editor, so removing an operation does not depend on
+  /// discovering the swipe on the home screen.
+  Future<void> _delete() async {
+    final draft = _draft!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить операцию?'),
+        content: Text(draft.title.isEmpty ? 'Без названия' : draft.title),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final ok = await runWrite(
+      context,
+      () => ref.read(opsProvider.notifier).delete(widget.opId!),
+      failureMessage: 'Не удалось удалить операцию',
+    );
+    if (!mounted) return;
+    if (ok) context.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = _ensureDraft();
@@ -163,6 +195,15 @@ class _OpEditScreenState extends ConsumerState<OpEditScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.opId == null ? 'Новая операция' : 'Операция'),
+        actions: [
+          // Nothing to delete while the operation has never been saved.
+          if (widget.opId != null)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Удалить операцию',
+              onPressed: _saving ? null : _delete,
+            ),
+        ],
       ),
       body: Form(
         key: _formKey,

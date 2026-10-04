@@ -27,6 +27,7 @@ bool _firesOn(PlannedOp op, DateTime day) {
     Schedule.once => day == start,
     Schedule.daily => true,
     Schedule.weekly => daysBetween(start, day) % 7 == 0,
+    Schedule.biweekly => daysBetween(start, day) % 14 == 0,
     Schedule.monthly => day.day == clampedDay(day.year, day.month),
     Schedule.yearly =>
       day.month == start.month && day.day == clampedDay(day.year, day.month),

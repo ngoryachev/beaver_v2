@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:beaver_v2/domain/models/forecast_horizon.dart';
+import 'package:beaver_v2/domain/models/planned_op.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The Supabase repositories are the one layer no other test can exercise: they
@@ -101,6 +103,81 @@ void main() {
           );
         }
       });
+    });
+  });
+
+  group('columns added after the first deploy', () {
+    // `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already has
+    // the table, so a column added later needs an explicit ALTER too. The
+    // parser below only reads the CREATE TABLE, which is why the ALTER is
+    // checked as text — `test/sql/migration_test.sh` is what actually applies
+    // the file twice.
+    for (final column in const ['forecast_preset', 'forecast_custom_date']) {
+      test('user_settings declares $column', () {
+        expect(tables['user_settings']!.keys, contains(column));
+      });
+
+      test('user_settings backfills $column on a deployed database', () {
+        expect(
+          schema,
+          contains('ADD COLUMN IF NOT EXISTS $column'),
+          reason:
+              'without this, $column is missing on every database created '
+              'before it was added',
+        );
+      });
+    }
+
+    test('the closed sets of planned_ops are restated for a deploy', () {
+      for (final constraint in const [
+        'planned_ops_category_check',
+        'planned_ops_schedule_check',
+      ]) {
+        expect(schema, contains('DROP CONSTRAINT IF EXISTS $constraint'));
+        expect(schema, contains('ADD CONSTRAINT $constraint CHECK'));
+      }
+    });
+  });
+
+  group('every closed set the app writes is accepted by its CHECK', () {
+    // The enums are the source of truth for these columns, so they are read
+    // from the app rather than restated here: adding a value without widening
+    // the CHECK fails the build instead of failing as a PostgREST 400.
+    test('planned_ops.category', () {
+      for (final category in OpCategory.values) {
+        expect(
+          tables['planned_ops']!['category'],
+          contains("'${category.wire}'"),
+          reason: 'category rejects "${category.wire}", which the app writes',
+        );
+      }
+    });
+
+    test('planned_ops.schedule', () {
+      for (final schedule in Schedule.values) {
+        expect(
+          tables['planned_ops']!['schedule'],
+          contains("'${schedule.wire}'"),
+          reason: 'schedule rejects "${schedule.wire}", which the app writes',
+        );
+      }
+    });
+
+    test('planned_ops.kind', () {
+      for (final kind in OpKind.values) {
+        expect(tables['planned_ops']!['kind'], contains("'${kind.wire}'"));
+      }
+    });
+
+    test('user_settings.forecast_preset', () {
+      for (final preset in ForecastPreset.values) {
+        expect(
+          tables['user_settings']!['forecast_preset'],
+          contains("'${preset.wire}'"),
+          reason:
+              'forecast_preset rejects "${preset.wire}", which the app writes',
+        );
+      }
     });
   });
 

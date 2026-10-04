@@ -119,6 +119,14 @@ rejects "недопустимый schedule" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date) VALUES ('$U1','t',1,'RUB','expense','hourly','2026-01-01')"
 rejects "недопустимая category" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,category) VALUES ('$U1','t',1,'RUB','expense','daily','2026-01-01','rent')"
+# The CHECKs are re-stated by ALTER after the CREATE TABLE, so these also prove
+# the ALTER landed and did not narrow the set.
+accepts "schedule = biweekly" \
+  "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date) VALUES ('$U1','раз в две недели',1,'RUB','expense','biweekly','2026-01-01')"
+for category in housing utilities health education software travel debt; do
+  accepts "category = $category" \
+    "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,category) VALUES ('$U1','t',1,'RUB','expense','monthly','2026-01-01','$category')"
+done
 rejects "end_date раньше start_date" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,end_date) VALUES ('$U1','t',1,'RUB','expense','daily','2026-01-10','2026-01-09')"
 accepts "end_date равна start_date" \
@@ -135,6 +143,20 @@ accepts "сценарий по умолчанию" \
   "INSERT INTO scenarios(user_id,name,is_default) VALUES ('$U1','Все',true)"
 rejects "второй сценарий по умолчанию" \
   "INSERT INTO scenarios(user_id,name,is_default) VALUES ('$U1','Другой',true)"
+accepts "настройки с горизонтом прогноза" \
+  "INSERT INTO user_settings(user_id,base_currency,forecast_preset,forecast_custom_date) VALUES ('$U1','RUB','custom','2026-05-01')"
+rejects "недопустимый forecast_preset" \
+  "UPDATE user_settings SET forecast_preset='quarter' WHERE user_id='$U1'"
+
+# The ALTERs that widen `category` and `schedule` on an already deployed
+# database name the constraints explicitly, so the names have to be the ones
+# Postgres actually used for the inline CHECKs.
+echo "== имена ограничений, которые пересоздаёт миграция"
+for constraint in planned_ops_category_check planned_ops_schedule_check \
+  user_settings_forecast_preset_check; do
+  check "$constraint существует" "1" \
+    "$(psql_file -qtAX -c "SELECT count(*) FROM pg_constraint WHERE conname='$constraint'")"
+done
 
 echo "== триггер updated_at"
 touched=$(psql_file -qtAX -c "UPDATE accounts SET name='Карта 2' WHERE id='aaaa1111-1111-1111-1111-111111111111'; SELECT updated_at > created_at FROM accounts WHERE id='aaaa1111-1111-1111-1111-111111111111'")

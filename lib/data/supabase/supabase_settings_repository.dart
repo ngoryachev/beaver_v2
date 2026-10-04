@@ -1,7 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../domain/models/forecast_horizon.dart';
 import '../../domain/models/user_settings.dart';
 import '../../domain/repositories/settings_repository.dart';
+import 'date_wire.dart';
 
 class SupabaseSettingsRepository implements SettingsRepository {
   final SupabaseClient _client;
@@ -29,10 +31,21 @@ class SupabaseSettingsRepository implements SettingsRepository {
   Map<String, dynamic> _toRow(UserSettings settings) => {
     'user_id': _userId,
     'base_currency': settings.baseCurrency.toUpperCase(),
+    'forecast_preset': settings.forecastPreset.wire,
+    // A DATE column: `dateToWire` so a local midnight cannot slip a day.
+    'forecast_custom_date': settings.forecastCustomDate == null
+        ? null
+        : dateToWire(settings.forecastCustomDate!),
   };
 
   UserSettings _toEntity(Map<String, dynamic> json) => UserSettings(
     userId: json['user_id'] as String,
     baseCurrency: json['base_currency'] as String,
+    forecastPreset: ForecastPreset.fromWire(
+      json['forecast_preset'] as String?,
+    ),
+    forecastCustomDate: json['forecast_custom_date'] == null
+        ? null
+        : dateFromWire(json['forecast_custom_date'] as String),
   );
 }

@@ -9,7 +9,6 @@ import 'presentation/screens/auth/register_screen.dart';
 import 'presentation/screens/forecast/forecast_screen.dart';
 import 'presentation/screens/home/home_screen.dart';
 import 'presentation/screens/ops/op_edit_screen.dart';
-import 'presentation/screens/ops/ops_list_screen.dart';
 import 'presentation/screens/scenarios/scenario_edit_screen.dart';
 import 'presentation/screens/scenarios/scenarios_screen.dart';
 import 'presentation/screens/settings/settings_screen.dart';
@@ -19,7 +18,6 @@ abstract final class Routes {
   static const login = '/login';
   static const register = '/register';
   static const home = '/';
-  static const ops = '/ops';
   static const opEdit = '/ops/edit';
   static const forecast = '/forecast';
   static const scenarios = '/scenarios';
@@ -60,10 +58,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.home,
             builder: (context, state) => const HomeScreen(),
-          ),
-          GoRoute(
-            path: Routes.ops,
-            builder: (context, state) => const OpsListScreen(),
           ),
           GoRoute(
             path: Routes.opEdit,

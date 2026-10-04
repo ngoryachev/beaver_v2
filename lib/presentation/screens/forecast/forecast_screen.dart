@@ -4,18 +4,17 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../domain/models/forecast_horizon.dart';
 import '../../../domain/models/planned_op.dart';
 import '../../../domain/projection/occurrences.dart';
 import '../../../domain/projection/project_balance.dart';
 import '../../format/money_format.dart';
+import '../../providers/forecast_horizon_provider.dart';
 import '../../providers/projection_provider.dart';
 import '../../providers/scenarios_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/write_guard.dart';
 import '../ops/op_labels.dart';
-
-/// Ready-made horizons. «Конец месяца» is first because "will I make it to
-/// payday" is the question this screen exists for.
-enum _Preset { endOfMonth, plus30, plus90, custom }
 
 class ForecastScreen extends ConsumerStatefulWidget {
   const ForecastScreen({super.key});
@@ -25,38 +24,37 @@ class ForecastScreen extends ConsumerStatefulWidget {
 }
 
 class _ForecastScreenState extends ConsumerState<ForecastScreen> {
-  _Preset _preset = _Preset.plus30;
-  DateTime? _customDate;
+  /// The horizon lives in the settings row, not in this state: it is the one
+  /// choice on this screen the user expects to find again, both after a restart
+  /// and on the preview card on the home screen.
+  Future<void> _select(ForecastHorizon horizon) => runWrite(
+    context,
+    () => ref.read(settingsProvider.notifier).setForecastHorizon(horizon),
+    failureMessage: 'Не удалось сохранить горизонт прогноза',
+  );
 
-  DateTime get _targetDate {
+  Future<void> _pickCustomDate(ForecastHorizon horizon) async {
     final today = dateOnly(DateTime.now());
-    return switch (_preset) {
-      _Preset.endOfMonth => DateTime(
-        today.year,
-        today.month,
-        daysInMonth(today.year, today.month),
-      ),
-      // Calendar days, not 24-hour durations: across a DST transition
-      // `today.add(Duration(days: 30))` lands on day 29 at 23:00.
-      _Preset.plus30 => addDays(today, 30),
-      _Preset.plus90 => addDays(today, 90),
-      _Preset.custom => _customDate ?? addDays(today, 30),
-    };
-  }
-
-  Future<void> _pickCustomDate() async {
-    final today = dateOnly(DateTime.now());
+    final stored = horizon.customDate;
+    // Now that the date is persisted it outlives the session that picked it, so
+    // by today it may well be in the past — and `showDatePicker` asserts on an
+    // `initialDate` before `firstDate`.
+    final initialDate = stored == null || stored.isBefore(today)
+        ? addDays(today, 30)
+        : stored;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _customDate ?? addDays(today, 30),
+      initialDate: initialDate,
       firstDate: today,
       lastDate: DateTime(today.year + 10),
     );
-    if (picked == null) return;
-    setState(() {
-      _preset = _Preset.custom;
-      _customDate = DateTime(picked.year, picked.month, picked.day);
-    });
+    if (picked == null || !mounted) return;
+    await _select(
+      ForecastHorizon(
+        preset: ForecastPreset.custom,
+        customDate: DateTime(picked.year, picked.month, picked.day),
+      ),
+    );
   }
 
   @override
@@ -64,7 +62,9 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
     final theme = Theme.of(context);
     final baseCurrency = ref.watch(baseCurrencyProvider);
     final scenario = ref.watch(activeScenarioProvider);
-    final projection = ref.watch(projectionProvider(_targetDate));
+    final horizon = ref.watch(forecastHorizonProvider);
+    final targetDate = ref.watch(forecastTargetDateProvider);
+    final projection = ref.watch(projectionProvider(targetDate));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Прогноз')),
@@ -81,18 +81,23 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _presetChip('Конец месяца', _Preset.endOfMonth),
-                    _presetChip('+30 дней', _Preset.plus30),
-                    _presetChip('+90 дней', _Preset.plus90),
+                    _presetChip(
+                      'Конец месяца',
+                      ForecastPreset.endOfMonth,
+                      horizon,
+                    ),
+                    _presetChip('+30 дней', ForecastPreset.plus30, horizon),
+                    _presetChip('+90 дней', ForecastPreset.plus90, horizon),
                     FilterChip(
                       label: Text(
-                        _preset == _Preset.custom && _customDate != null
-                            ? formatDate(_customDate!)
+                        horizon.preset == ForecastPreset.custom &&
+                                horizon.customDate != null
+                            ? formatDate(horizon.customDate!)
                             : 'Другая дата',
                       ),
                       avatar: const Icon(Icons.event, size: 18),
-                      selected: _preset == _Preset.custom,
-                      onSelected: (_) => _pickCustomDate(),
+                      selected: horizon.preset == ForecastPreset.custom,
+                      onSelected: (_) => _pickCustomDate(horizon),
                     ),
                   ],
                 ),
@@ -182,7 +187,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _summaryTile(
-                        label: formatDate(_targetDate),
+                        label: formatDate(targetDate),
                         value: formatMoney(projection.endBalance, baseCurrency),
                         isNegative: projection.endBalance < 0,
                       ),
@@ -243,10 +248,18 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
     );
   }
 
-  Widget _presetChip(String label, _Preset preset) => FilterChip(
+  Widget _presetChip(
+    String label,
+    ForecastPreset preset,
+    ForecastHorizon horizon,
+  ) => FilterChip(
     label: Text(label),
-    selected: _preset == preset,
-    onSelected: (_) => setState(() => _preset = preset),
+    selected: horizon.preset == preset,
+    onSelected: (_) => _select(
+      // The custom date rides along, so «Другая дата» still shows it after a
+      // detour through another preset.
+      ForecastHorizon(preset: preset, customDate: horizon.customDate),
+    ),
   );
 
   Widget _summaryTile({
