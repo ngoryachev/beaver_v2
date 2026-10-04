@@ -11,6 +11,7 @@ import 'package:beaver_v2/domain/models/user_settings.dart';
 import 'package:beaver_v2/presentation/format/money_format.dart';
 import 'package:beaver_v2/presentation/providers/repo_providers.dart';
 import 'package:beaver_v2/presentation/screens/home/home_screen.dart';
+import 'package:beaver_v2/presentation/screens/home/widgets/ops_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -103,6 +104,57 @@ Future<InMemoryPlannedOpsRepository> _pumpHome(
 
 Future<void> _expand(WidgetTester tester, String category) async {
   await tester.tap(find.text(category));
+  await tester.pumpAndSettle();
+}
+
+/// The section on its own, for the cases where the rest of the home screen
+/// would get in the way (an exaggerated text size, say).
+Future<void> _pumpSection(
+  WidgetTester tester,
+  List<PlannedOp> ops, {
+  List<Rate> rates = const [],
+  Size size = const Size(390, 844),
+  double textScale = 1,
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        currentUserIdProvider.overrideWithValue(_userId),
+        plannedOpsRepositoryProvider.overrideWithValue(
+          InMemoryPlannedOpsRepository(ops),
+        ),
+        scenariosRepositoryProvider.overrideWithValue(
+          InMemoryScenariosRepository([
+            Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
+          ]),
+        ),
+        ratesRepositoryProvider.overrideWithValue(
+          InMemoryRatesRepository(rates),
+        ),
+        settingsRepositoryProvider.overrideWithValue(
+          InMemorySettingsRepository(
+            const UserSettings(userId: _userId, baseCurrency: 'RUB'),
+          ),
+        ),
+      ],
+      child: MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+          child: Scaffold(
+            body: ListView(
+              children: [
+                OpsSection(expanded: const {}, onToggle: (_) {}),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -402,9 +454,8 @@ void main() {
     tester,
   ) async {
     // The same row as above, minus the rates: the estimate then carries the
-    // «· нет курса» tail, which is the longest the header can ever get. The
-    // category label is `Expanded` and can ellipsise, but the estimate is a
-    // plain `Text` with `softWrap: false`, so nothing gives way on its side.
+    // «· нет курса» tail, which is the longest the header can ever get — label
+    // and estimate together are wider than a phone.
     await _pumpHome(
       tester,
       [
@@ -431,6 +482,39 @@ void main() {
       isNull,
       reason: 'the collapsed header overflows once the estimate is long',
     );
+  });
+
+  testWidgets('the collapsed header fits at a large accessibility text size', (
+    tester,
+  ) async {
+    // Same header, every glyph doubled — the one case the row cannot borrow
+    // width for. The section is pumped on its own: at this text size the
+    // account cards above it blow up for reasons of their own, which would
+    // drown out what this test is looking at.
+    await _pumpSection(
+      tester,
+      [
+        _op(
+          id: 'o1',
+          title: 'Электричество и вода',
+          amount: 1500000,
+          category: OpCategory.utilities,
+        ),
+        _op(
+          id: 'o2',
+          title: 'Хостинг',
+          amount: 199900,
+          category: OpCategory.utilities,
+          code: 'EUR',
+        ),
+      ],
+      size: const Size(390, 844),
+      textScale: 2,
+    );
+
+    expect(find.text('Коммунальные платежи'), findsOneWidget);
+    expect(find.textContaining('нет курса'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   group('swipe to delete', () {

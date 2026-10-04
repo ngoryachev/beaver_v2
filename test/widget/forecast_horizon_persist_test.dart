@@ -255,6 +255,59 @@ void main() {
     );
   });
 
+  testWidgets('tomorrow is the shortest horizon the card will name', (
+    tester,
+  ) async {
+    // The boundary on the other side of "expired": the day after today is
+    // still a horizon, and nothing may round it away.
+    final target = addDays(_today, 1);
+    await _settings.save(
+      UserSettings(
+        userId: _userId,
+        baseCurrency: 'RUB',
+        forecastPreset: ForecastPreset.custom,
+        forecastCustomDate: target,
+      ),
+    );
+
+    await _pump(tester, const HomeScreen());
+    expect(find.text(formatDate(target)), findsOneWidget);
+    expect(_homeForecast(tester), formatMoney(10000000 - 2 * 10000, 'RUB'));
+
+    await _pump(tester, const ForecastScreen());
+    expect(_chipSelected(tester, formatDate(target)), isTrue);
+    expect(_chipSelected(tester, '+30 дней'), isFalse);
+  });
+
+  testWidgets('an expired date left in the row does not break the picker', (
+    tester,
+  ) async {
+    // Choosing a preset keeps the stored date around on purpose, so after this
+    // detour the row holds «plus90 + a date from last week» — a shape
+    // `isExpired` says nothing about, since the preset is not custom. Going
+    // back to «Другая дата» then hands that date to `showDatePicker`, which
+    // asserts on an `initialDate` before its `firstDate`.
+    await _settings.save(
+      UserSettings(
+        userId: _userId,
+        baseCurrency: 'RUB',
+        forecastPreset: ForecastPreset.custom,
+        forecastCustomDate: addDays(_today, -7),
+      ),
+    );
+
+    await _pump(tester, const ForecastScreen());
+    await tester.tap(find.text('+90 дней'));
+    await tester.pumpAndSettle();
+    expect(_chipSelected(tester, '+90 дней'), isTrue);
+
+    await tester.tap(find.text('Другая дата'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+  });
+
   testWidgets('cycling the base currency does not reset the horizon', (
     tester,
   ) async {
