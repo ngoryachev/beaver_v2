@@ -84,6 +84,46 @@ void main() {
       expect(dates.last, windowTo);
     }, skip: skipReason);
 
+    test('a biweekly series keeps a 14-day step and stays at midnight', () {
+      final from = DateTime(windowFrom.year, windowFrom.month, windowFrom.day);
+      final to = DateTime(from.year, from.month, from.day + 42);
+      final dates = occurrencesBetween(op(Schedule.biweekly, from), from, to);
+
+      expect(dates, hasLength(4));
+      for (var i = 0; i < dates.length; i++) {
+        expect(dates[i], dateOnly(dates[i]));
+        // Calendar days, so the 23- or 25-hour day inside the window does not
+        // drag the series an hour off its cadence.
+        expect(daysBetween(from, dates[i]), i * 14);
+      }
+    }, skip: skipReason);
+
+    test('a biweekly series never fires before the window start', () {
+      // Same trap as the weekly case below: the anchor sits before the
+      // transition, so the elapsed-day count the alignment uses is short by an
+      // hour — with a 14-day period that is just as easy to round the wrong way.
+      final from = DateTime(weeklyFrom.year, weeklyFrom.month, weeklyFrom.day);
+      final to = DateTime(from.year, from.month, from.day + 60);
+      for (var offset = 1; offset <= 60; offset++) {
+        final start = DateTime(from.year, from.month, from.day - offset);
+        final dates = occurrencesBetween(
+          op(Schedule.biweekly, start),
+          from,
+          to,
+        );
+
+        for (final date in dates) {
+          expect(
+            date.isBefore(from),
+            isFalse,
+            reason: 'start $start, window from $from: $date is outside it',
+          );
+          expect(date, dateOnly(date));
+          expect(daysBetween(start, date) % 14, 0);
+        }
+      }
+    }, skip: skipReason);
+
     test('a weekly series never fires before the window start', () {
       // The window opens just after the transition and the anchor sits before
       // it, so the elapsed-day count the alignment uses is short by an hour.

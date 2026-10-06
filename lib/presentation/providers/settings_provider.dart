@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/forecast_horizon.dart';
 import '../../domain/models/user_settings.dart';
 import '../../domain/projection/project_balance.dart';
 import 'accounts_provider.dart';
@@ -21,13 +22,30 @@ class SettingsNotifier extends AsyncNotifier<UserSettings?> {
     return fresh;
   }
 
-  Future<void> setBaseCurrency(String code) async {
+  Future<void> setBaseCurrency(String code) => _update(
+    (settings) => settings.copyWith(baseCurrency: code.toUpperCase()),
+  );
+
+  Future<void> setForecastHorizon(ForecastHorizon horizon) => _update(
+    (settings) => settings.copyWith(
+      forecastPreset: horizon.preset,
+      // Kept even when another preset is selected, so coming back to «Другая
+      // дата» remembers the date instead of asking for it again.
+      forecastCustomDate: horizon.customDate,
+    ),
+  );
+
+  /// Saves one changed field of the row.
+  ///
+  /// Always derived from the current value: rebuilding the row from scratch
+  /// would reset every setting the caller did not mention — picking a base
+  /// currency would throw away the forecast horizon.
+  Future<void> _update(UserSettings Function(UserSettings) change) async {
     final current = state.valueOrNull;
     final userId = current?.userId ?? ref.read(currentUserIdProvider);
     if (userId == null) return;
-    await ref
-        .read(settingsRepositoryProvider)
-        .save(UserSettings(userId: userId, baseCurrency: code.toUpperCase()));
+    final base = current ?? UserSettings(userId: userId, baseCurrency: 'RUB');
+    await ref.read(settingsRepositoryProvider).save(change(base));
     ref.invalidateSelf();
     await future;
   }

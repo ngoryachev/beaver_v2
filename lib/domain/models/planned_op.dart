@@ -20,6 +20,11 @@ enum OpCategory {
   food('food'),
   shopping('shopping'),
   services('services'),
+  housing('housing'),
+  utilities('utilities'),
+  health('health'),
+  education('education'),
+  software('software'),
   travel('travel'),
   fun('fun'),
   debt('debt'),
@@ -40,6 +45,7 @@ enum Schedule {
   once('once'),
   daily('daily'),
   weekly('weekly'),
+  biweekly('biweekly'),
   monthly('monthly'),
   yearly('yearly');
 

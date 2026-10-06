@@ -74,6 +74,62 @@ else
   echo "  ok: повторный прогон чистый"
 fi
 
+# --- the upgrade path: a database that already has the tables ----------------
+# `CREATE TABLE IF NOT EXISTS` is a no-op there, so widening `category` and
+# `schedule` and adding the horizon columns rests entirely on the ALTERs. The run
+# above only proves the fresh path, so this one rebuilds the *previous* shape of
+# the schema in a throwaway database and applies the migration over it.
+echo "== применение на уже развёрнутую базу"
+psql_file -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE upgrade" >/dev/null 2>&1
+psql_upgrade() { docker exec -i "$CONTAINER" psql -U postgres -d upgrade "$@"; }
+
+psql_upgrade -v ON_ERROR_STOP=1 -q <<'SQL'
+CREATE SCHEMA IF NOT EXISTS auth;
+CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY);
+CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid AS $$
+  SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
+$$ LANGUAGE sql STABLE;
+GRANT USAGE ON SCHEMA public, auth TO authenticated;
+SQL
+psql_upgrade -v ON_ERROR_STOP=1 -q < supabase/migrations/001_beaver_schema.sql >/dev/null 2>&1
+# Roll the closed sets and the horizon columns back to what shipped before, and
+# leave a row behind: a NOT NULL column added to a populated table has to carry a
+# default, and the user's base currency must survive the upgrade untouched.
+psql_upgrade -v ON_ERROR_STOP=1 -q <<'SQL'
+ALTER TABLE planned_ops DROP CONSTRAINT planned_ops_category_check;
+ALTER TABLE planned_ops ADD CONSTRAINT planned_ops_category_check CHECK (
+  category IN ('food','shopping','services','travel','fun','debt','salary','other'));
+ALTER TABLE planned_ops DROP CONSTRAINT planned_ops_schedule_check;
+ALTER TABLE planned_ops ADD CONSTRAINT planned_ops_schedule_check CHECK (
+  schedule IN ('once','daily','weekly','monthly','yearly'));
+ALTER TABLE user_settings DROP COLUMN forecast_preset;
+ALTER TABLE user_settings DROP COLUMN forecast_custom_date;
+INSERT INTO auth.users(id) VALUES ('11111111-1111-1111-1111-111111111111');
+INSERT INTO user_settings(user_id, base_currency)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'EUR');
+SQL
+
+if ! psql_upgrade -v ON_ERROR_STOP=1 -q < supabase/migrations/001_beaver_schema.sql 2>/dev/null; then
+  echo "  FAIL: миграция не применилась на развёрнутую базу" >&2
+  failures=$((failures + 1))
+else
+  echo "  ok: применилась"
+fi
+check "старая строка настроек получила горизонт по умолчанию" "plus30|EUR" \
+  "$(psql_upgrade -qtAX -c "SELECT forecast_preset || '|' || base_currency FROM user_settings")"
+if psql_upgrade -v ON_ERROR_STOP=1 -q -c "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,category) VALUES ('11111111-1111-1111-1111-111111111111','t',1,'RUB','expense','biweekly','2026-01-01','software')" >/dev/null 2>&1; then
+  echo "  ok: расширенные category и schedule приняты"
+else
+  echo "  FAIL: ALTER не расширил category/schedule на развёрнутой базе" >&2
+  failures=$((failures + 1))
+fi
+if psql_upgrade -v ON_ERROR_STOP=1 -q -c "UPDATE user_settings SET forecast_preset='quarter'" >/dev/null 2>&1; then
+  echo "  FAIL: forecast_preset без CHECK на развёрнутой базе" >&2
+  failures=$((failures + 1))
+else
+  echo "  ok: мусорный forecast_preset отклонён"
+fi
+
 psql_file -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO auth.users(id) VALUES
   ('11111111-1111-1111-1111-111111111111'),
@@ -119,6 +175,14 @@ rejects "недопустимый schedule" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date) VALUES ('$U1','t',1,'RUB','expense','hourly','2026-01-01')"
 rejects "недопустимая category" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,category) VALUES ('$U1','t',1,'RUB','expense','daily','2026-01-01','rent')"
+# The CHECKs are re-stated by ALTER after the CREATE TABLE, so these also prove
+# the ALTER landed and did not narrow the set.
+accepts "schedule = biweekly" \
+  "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date) VALUES ('$U1','раз в две недели',1,'RUB','expense','biweekly','2026-01-01')"
+for category in housing utilities health education software travel debt; do
+  accepts "category = $category" \
+    "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,category) VALUES ('$U1','t',1,'RUB','expense','monthly','2026-01-01','$category')"
+done
 rejects "end_date раньше start_date" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,end_date) VALUES ('$U1','t',1,'RUB','expense','daily','2026-01-10','2026-01-09')"
 accepts "end_date равна start_date" \
@@ -135,6 +199,20 @@ accepts "сценарий по умолчанию" \
   "INSERT INTO scenarios(user_id,name,is_default) VALUES ('$U1','Все',true)"
 rejects "второй сценарий по умолчанию" \
   "INSERT INTO scenarios(user_id,name,is_default) VALUES ('$U1','Другой',true)"
+accepts "настройки с горизонтом прогноза" \
+  "INSERT INTO user_settings(user_id,base_currency,forecast_preset,forecast_custom_date) VALUES ('$U1','RUB','custom','2026-05-01')"
+rejects "недопустимый forecast_preset" \
+  "UPDATE user_settings SET forecast_preset='quarter' WHERE user_id='$U1'"
+
+# The ALTERs that widen `category` and `schedule` on an already deployed
+# database name the constraints explicitly, so the names have to be the ones
+# Postgres actually used for the inline CHECKs.
+echo "== имена ограничений, которые пересоздаёт миграция"
+for constraint in planned_ops_category_check planned_ops_schedule_check \
+  user_settings_forecast_preset_check; do
+  check "$constraint существует" "1" \
+    "$(psql_file -qtAX -c "SELECT count(*) FROM pg_constraint WHERE conname='$constraint'")"
+done
 
 echo "== триггер updated_at"
 touched=$(psql_file -qtAX -c "UPDATE accounts SET name='Карта 2' WHERE id='aaaa1111-1111-1111-1111-111111111111'; SELECT updated_at > created_at FROM accounts WHERE id='aaaa1111-1111-1111-1111-111111111111'")

@@ -30,9 +30,29 @@ CREATE TABLE IF NOT EXISTS user_settings (
   -- currencies of the user's non-archived accounts; the database only checks shape.
   base_currency VARCHAR(3) NOT NULL DEFAULT 'RUB'
     CHECK (base_currency ~ '^[A-Z]{3}$'),
+  -- Forecast horizon the user last picked. Stored so it survives a restart and
+  -- so the home screen and the forecast screen cannot disagree about it.
+  forecast_preset TEXT NOT NULL DEFAULT 'plus30' CHECK (forecast_preset IN (
+    'end_of_month', 'plus30', 'plus90', 'custom'
+  )),
+  -- Only meaningful for forecast_preset = 'custom'.
+  forecast_custom_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- `CREATE TABLE IF NOT EXISTS` above is a no-op on an already deployed database,
+-- so the horizon columns are added separately for it.
+ALTER TABLE user_settings
+  ADD COLUMN IF NOT EXISTS forecast_preset TEXT NOT NULL DEFAULT 'plus30';
+ALTER TABLE user_settings
+  ADD COLUMN IF NOT EXISTS forecast_custom_date DATE;
+ALTER TABLE user_settings
+  DROP CONSTRAINT IF EXISTS user_settings_forecast_preset_check;
+ALTER TABLE user_settings
+  ADD CONSTRAINT user_settings_forecast_preset_check CHECK (forecast_preset IN (
+    'end_of_month', 'plus30', 'plus90', 'custom'
+  ));
 
 -- Redundant next to the primary key, but kept so every table in this migration
 -- is indexed by user_id the same way.
@@ -128,13 +148,14 @@ CREATE TABLE IF NOT EXISTS planned_ops (
   currency_code VARCHAR(3) NOT NULL CHECK (currency_code ~ '^[A-Z]{3}$'),
   kind TEXT NOT NULL CHECK (kind IN ('income', 'expense')),
   category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
-    'food', 'shopping', 'services', 'travel', 'fun', 'debt', 'salary', 'other'
+    'food', 'shopping', 'services', 'housing', 'utilities', 'health',
+    'education', 'software', 'travel', 'fun', 'debt', 'salary', 'other'
   )),
   -- NULL means "not tied to a particular account": it still moves the total.
   -- Deleting the account only detaches the operation, it does not remove it.
   account_id UUID REFERENCES accounts(id) ON DELETE SET NULL,
   schedule TEXT NOT NULL CHECK (schedule IN (
-    'once', 'daily', 'weekly', 'monthly', 'yearly'
+    'once', 'daily', 'weekly', 'biweekly', 'monthly', 'yearly'
   )),
   start_date DATE NOT NULL,
   end_date DATE,
@@ -143,6 +164,21 @@ CREATE TABLE IF NOT EXISTS planned_ops (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT planned_ops_dates_ordered
     CHECK (end_date IS NULL OR end_date >= start_date)
+);
+
+-- Same reason as the user_settings ALTERs above: the CHECKs in the CREATE TABLE
+-- never reach a database that already has the table, so the two closed sets are
+-- restated here. Postgres names an inline column CHECK `<table>_<column>_check`.
+ALTER TABLE planned_ops DROP CONSTRAINT IF EXISTS planned_ops_category_check;
+ALTER TABLE planned_ops ADD CONSTRAINT planned_ops_category_check CHECK (
+  category IN (
+    'food', 'shopping', 'services', 'housing', 'utilities', 'health',
+    'education', 'software', 'travel', 'fun', 'debt', 'salary', 'other'
+  )
+);
+ALTER TABLE planned_ops DROP CONSTRAINT IF EXISTS planned_ops_schedule_check;
+ALTER TABLE planned_ops ADD CONSTRAINT planned_ops_schedule_check CHECK (
+  schedule IN ('once', 'daily', 'weekly', 'biweekly', 'monthly', 'yearly')
 );
 
 CREATE INDEX IF NOT EXISTS idx_planned_ops_user_id ON planned_ops(user_id);

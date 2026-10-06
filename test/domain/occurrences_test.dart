@@ -180,6 +180,88 @@ void main() {
     });
   });
 
+  group('occurrencesBetween — biweekly', () {
+    test('keeps a 14-day cadence anchored on the start date', () {
+      final op = _op(
+        schedule: Schedule.biweekly,
+        startDate: DateTime(2026, 3, 2),
+      );
+
+      final dates = occurrencesBetween(
+        op,
+        DateTime(2026, 3, 1),
+        DateTime(2026, 4, 15),
+      );
+
+      expect(_fmt(dates), [
+        '02.03.2026',
+        '16.03.2026',
+        '30.03.2026',
+        '13.04.2026',
+      ]);
+    });
+
+    test('a start long before the window stays on the same 14-day cycle', () {
+      // The window opens on 01.03, 55 days after the anchor — not a multiple of
+      // 14 — so the series has to align forward to the next on-cycle day (56
+      // days in, 02.03) rather than fire on the window's first day.
+      final op = _op(
+        schedule: Schedule.biweekly,
+        startDate: DateTime(2026, 1, 5),
+      );
+
+      final dates = occurrencesBetween(
+        op,
+        DateTime(2026, 3, 1),
+        DateTime(2026, 4, 1),
+      );
+
+      expect(_fmt(dates), ['02.03.2026', '16.03.2026', '30.03.2026']);
+      // Every date is a whole number of fortnights from the anchor.
+      expect(
+        dates.every((d) => daysBetween(DateTime(2026, 1, 5), d) % 14 == 0),
+        isTrue,
+      );
+      // Half of the weekly cadence: a weekly series on the same anchor would
+      // also fire on 09.03 and 23.03.
+      expect(_fmt(dates), isNot(contains('09.03.2026')));
+      expect(_fmt(dates), isNot(contains('23.03.2026')));
+    });
+
+    test('fires on the window start when it lands on the cycle', () {
+      final op = _op(
+        schedule: Schedule.biweekly,
+        startDate: DateTime(2026, 1, 1),
+      );
+
+      // 01.01 + 4 × 14 days = 26.02, so the 26th opens on-cycle.
+      final dates = occurrencesBetween(
+        op,
+        DateTime(2026, 2, 26),
+        DateTime(2026, 3, 20),
+      );
+
+      expect(_fmt(dates), ['26.02.2026', '12.03.2026']);
+    });
+
+    test('end_date truncates the series', () {
+      final op = _op(
+        schedule: Schedule.biweekly,
+        startDate: DateTime(2026, 3, 2),
+        endDate: DateTime(2026, 3, 29),
+      );
+
+      final dates = occurrencesBetween(
+        op,
+        DateTime(2026, 3, 1),
+        DateTime(2026, 4, 30),
+      );
+
+      // 30.03 is past the end date by a day, so the series stops at 16.03.
+      expect(_fmt(dates), ['02.03.2026', '16.03.2026']);
+    });
+  });
+
   group('occurrencesBetween — monthly', () {
     test('keeps the same day of month', () {
       final op = _op(

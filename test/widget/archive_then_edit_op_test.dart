@@ -9,8 +9,8 @@ import 'package:beaver_v2/domain/models/planned_op.dart';
 import 'package:beaver_v2/domain/models/scenario.dart';
 import 'package:beaver_v2/domain/models/user_settings.dart';
 import 'package:beaver_v2/presentation/providers/repo_providers.dart';
+import 'package:beaver_v2/presentation/screens/home/home_screen.dart';
 import 'package:beaver_v2/presentation/screens/ops/op_edit_screen.dart';
-import 'package:beaver_v2/presentation/screens/ops/ops_list_screen.dart';
 import 'package:beaver_v2/presentation/screens/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -98,7 +98,7 @@ Future<void> _pump(
 void main() {
   setUpAll(() => initializeDateFormatting('ru'));
 
-  testWidgets('the operations list survives its account being archived', (
+  testWidgets('the operations section survives its account being archived', (
     tester,
   ) async {
     final container = _container();
@@ -106,7 +106,11 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'В архив'));
     await tester.pumpAndSettle();
 
-    await _pump(tester, container, const OpsListScreen());
+    await _pump(tester, container, const HomeScreen());
+    // «Аренда» has no category, so it sits under «Прочее» — collapsed by
+    // default, like every group.
+    await tester.tap(find.text('Прочее'));
+    await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.text('Аренда'), findsOneWidget);
@@ -125,7 +129,7 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Вернуть'), findsOneWidget);
 
     // Step two: open the operation that pointed at it, exactly as tapping the
-    // row in «Операции» does.
+    // row in the «Операции» section does.
     await _pump(tester, container, const OpEditScreen(opId: 'op1'));
 
     expect(tester.takeException(), isNull);
