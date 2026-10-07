@@ -26,7 +26,10 @@ jobs:
 
       # The migration is applied to the shared production database on deploy,
       # so it is checked against a throwaway Postgres first (twice, for
-      # idempotency). The runner has docker, so the script does not skip.
+      # idempotency). The script skips rather than pulls a missing image, so
+      # the image is fetched here.
+      - run: docker pull postgres:16-alpine
+
       - run: test/sql/migration_test.sh
 
   # Beaver shares the VPS, gateway and database with priority-lists; see
