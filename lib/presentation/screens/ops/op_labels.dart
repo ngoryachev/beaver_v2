@@ -17,6 +17,10 @@ String categoryLabel(OpCategory category) => switch (category) {
   OpCategory.travel => 'Путешествия',
   OpCategory.fun => 'Развлечения',
   OpCategory.debt => 'Кредиты',
+  // Money owed to people, as opposed to bank loans under `debt`.
+  OpCategory.personalDebt => 'Долги',
+  OpCategory.alimony => 'Алименты',
+  OpCategory.taxes => 'Налоги',
   OpCategory.salary => 'Зарплата',
   OpCategory.other => 'Прочее',
 };
@@ -33,6 +37,9 @@ IconData categoryIcon(OpCategory category) => switch (category) {
   OpCategory.travel => Icons.flight_takeoff,
   OpCategory.fun => Icons.celebration_outlined,
   OpCategory.debt => Icons.account_balance_outlined,
+  OpCategory.personalDebt => Icons.handshake_outlined,
+  OpCategory.alimony => Icons.family_restroom,
+  OpCategory.taxes => Icons.receipt_long_outlined,
   OpCategory.salary => Icons.payments_outlined,
   OpCategory.other => Icons.category_outlined,
 };
