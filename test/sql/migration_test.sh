@@ -30,8 +30,11 @@ cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=pg "$IMAGE" >/dev/null
+# Over TCP, not the socket: on first start the image runs a temporary
+# socket-only server for initdb and then restarts, and a socket check can catch
+# that temporary one and race the restart.
 for _ in $(seq 1 30); do
-  docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break
+  docker exec "$CONTAINER" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
   sleep 1
 done
 
