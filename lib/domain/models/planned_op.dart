@@ -28,6 +28,9 @@ enum OpCategory {
   travel('travel'),
   fun('fun'),
   debt('debt'),
+  personalDebt('personal_debt'),
+  alimony('alimony'),
+  taxes('taxes'),
   salary('salary'),
   other('other');
 

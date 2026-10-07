@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS planned_ops (
   kind TEXT NOT NULL CHECK (kind IN ('income', 'expense')),
   category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
     'food', 'shopping', 'services', 'housing', 'utilities', 'health',
-    'education', 'software', 'travel', 'fun', 'debt', 'salary', 'other'
+    'education', 'software', 'travel', 'fun', 'debt', 'personal_debt',
+    'alimony', 'taxes', 'salary', 'other'
   )),
   -- NULL means "not tied to a particular account": it still moves the total.
   -- Deleting the account only detaches the operation, it does not remove it.
@@ -173,7 +174,8 @@ ALTER TABLE planned_ops DROP CONSTRAINT IF EXISTS planned_ops_category_check;
 ALTER TABLE planned_ops ADD CONSTRAINT planned_ops_category_check CHECK (
   category IN (
     'food', 'shopping', 'services', 'housing', 'utilities', 'health',
-    'education', 'software', 'travel', 'fun', 'debt', 'salary', 'other'
+    'education', 'software', 'travel', 'fun', 'debt', 'personal_debt',
+    'alimony', 'taxes', 'salary', 'other'
   )
 );
 ALTER TABLE planned_ops DROP CONSTRAINT IF EXISTS planned_ops_schedule_check;

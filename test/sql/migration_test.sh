@@ -182,7 +182,7 @@ rejects "недопустимая category" \
 # the ALTER landed and did not narrow the set.
 accepts "schedule = biweekly" \
   "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date) VALUES ('$U1','раз в две недели',1,'RUB','expense','biweekly','2026-01-01')"
-for category in housing utilities health education software travel debt; do
+for category in housing utilities health education software travel debt personal_debt alimony taxes; do
   accepts "category = $category" \
     "INSERT INTO planned_ops(user_id,title,amount,currency_code,kind,schedule,start_date,category) VALUES ('$U1','t',1,'RUB','expense','monthly','2026-01-01','$category')"
 done
