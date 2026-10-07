@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../domain/models/account.dart';
 import '../../../domain/models/planned_op.dart';
+import '../../../domain/projection/home_sort.dart';
 import '../../../router.dart';
 import '../../format/money_format.dart';
 import '../../providers/accounts_provider.dart';
@@ -18,6 +19,7 @@ import 'transfer_sheet.dart';
 import 'widgets/account_card.dart';
 import 'widgets/add_account_dialog.dart';
 import 'widgets/ops_section.dart';
+import 'widgets/sort_button.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -72,12 +74,16 @@ class _HomeBodyState extends ConsumerState<_HomeBody> {
 
   @override
   Widget build(BuildContext context) {
-    final live = widget.accounts
-        .where((account) => !account.archived)
-        .toList();
     final baseCurrency = ref.watch(baseCurrencyProvider);
     final rates = ref.watch(rateTableProvider);
     final scenario = ref.watch(activeScenarioProvider);
+    final accountsSort = ref.watch(accountsSortProvider);
+    final live = sortAccounts(
+      widget.accounts.where((account) => !account.archived),
+      rates: rates,
+      baseCurrency: baseCurrency,
+      direction: accountsSort,
+    );
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -105,10 +111,32 @@ class _HomeBodyState extends ConsumerState<_HomeBody> {
           const _ForecastPreviewCard(),
           const SizedBox(height: 8),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              'Счета',
-              style: Theme.of(context).textTheme.titleMedium,
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+            // The height of the sort button, so the title does not jump when
+            // the button is hidden for a single account.
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 40),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Счета',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  if (live.length > 1)
+                    SortButton(
+                      direction: accountsSort,
+                      onPressed: () => runWrite(
+                        context,
+                        () => ref
+                            .read(settingsProvider.notifier)
+                            .setAccountsSort(accountsSort.toggled),
+                        failureMessage: 'Не удалось сохранить сортировку',
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           if (live.isEmpty)

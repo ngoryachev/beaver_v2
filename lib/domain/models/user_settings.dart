@@ -1,4 +1,5 @@
 import 'forecast_horizon.dart';
+import 'amount_sort.dart';
 
 /// Per-user preferences. Exactly one row per user.
 class UserSettings {
@@ -16,11 +17,20 @@ class UserSettings {
   /// The date behind [ForecastPreset.custom]. Date-only.
   final DateTime? forecastCustomDate;
 
+  /// By-amount sort of the accounts on the home screen.
+  final AmountSort accountsSort;
+
+  /// By-amount sort of the operation categories and of the operations inside
+  /// each one.
+  final AmountSort opsSort;
+
   const UserSettings({
     required this.userId,
     required this.baseCurrency,
     this.forecastPreset = ForecastPreset.plus30,
     this.forecastCustomDate,
+    this.accountsSort = AmountSort.desc,
+    this.opsSort = AmountSort.desc,
   });
 
   ForecastHorizon get forecastHorizon =>
@@ -30,11 +40,15 @@ class UserSettings {
     String? baseCurrency,
     ForecastPreset? forecastPreset,
     DateTime? forecastCustomDate,
+    AmountSort? accountsSort,
+    AmountSort? opsSort,
   }) => UserSettings(
     userId: userId,
     baseCurrency: baseCurrency ?? this.baseCurrency,
     forecastPreset: forecastPreset ?? this.forecastPreset,
     forecastCustomDate: forecastCustomDate ?? this.forecastCustomDate,
+    accountsSort: accountsSort ?? this.accountsSort,
+    opsSort: opsSort ?? this.opsSort,
   );
 
   @override
@@ -43,9 +57,17 @@ class UserSettings {
       other.userId == userId &&
       other.baseCurrency == baseCurrency &&
       other.forecastPreset == forecastPreset &&
-      other.forecastCustomDate == forecastCustomDate;
+      other.forecastCustomDate == forecastCustomDate &&
+      other.accountsSort == accountsSort &&
+      other.opsSort == opsSort;
 
   @override
-  int get hashCode =>
-      Object.hash(userId, baseCurrency, forecastPreset, forecastCustomDate);
+  int get hashCode => Object.hash(
+    userId,
+    baseCurrency,
+    forecastPreset,
+    forecastCustomDate,
+    accountsSort,
+    opsSort,
+  );
 }

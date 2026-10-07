@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../domain/models/amount_sort.dart';
 import '../../../../domain/models/planned_op.dart';
+import '../../../../domain/projection/home_sort.dart';
 import '../../../../domain/projection/monthly_equivalent.dart';
 import '../../../../domain/projection/rate_table.dart';
 import '../../../../router.dart';
@@ -13,6 +15,7 @@ import '../../../providers/scenarios_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/write_guard.dart';
 import '../../ops/op_labels.dart';
+import 'sort_button.dart';
 
 /// Planned operations on the home screen, grouped by category.
 ///
@@ -38,13 +41,61 @@ class OpsSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final opsState = ref.watch(opsProvider);
+    final ops = opsState.valueOrNull ?? const <PlannedOp>[];
+    final scenario = ref.watch(activeScenarioProvider);
+    final baseCurrency = ref.watch(baseCurrencyProvider);
+    final opsSort = ref.watch(opsSortProvider);
+    // Every operation, scenario-filtered like the category estimates it adds
+    // up — the sum of the headers below, give or take their rounding.
+    final total = ops.isEmpty
+        ? null
+        : monthlyTotal(
+            ops: ops.where(
+              (op) => scenario == null || scenario.allowsOp(op.id),
+            ),
+            rates: ref.watch(rateTableProvider),
+            baseCurrency: baseCurrency,
+            today: DateTime.now(),
+          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text('Операции', style: theme.textTheme.titleMedium),
+          padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+          child: ConstrainedBox(
+            // The height of the sort button, so the title does not jump when
+            // the button is hidden.
+            constraints: const BoxConstraints(minHeight: 40),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Операции', style: theme.textTheme.titleMedium),
+                      if (total != null)
+                        Text(
+                          monthlyLabel(total, baseCurrency),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                if (ops.length > 1)
+                  SortButton(
+                    direction: opsSort,
+                    onPressed: () => runWrite(
+                      context,
+                      () => ref
+                          .read(settingsProvider.notifier)
+                          .setOpsSort(opsSort.toggled),
+                      failureMessage: 'Не удалось сохранить сортировку',
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
         opsState.when(
           loading: () => const Padding(
@@ -78,7 +129,12 @@ class OpsSection extends ConsumerWidget {
                     textAlign: TextAlign.center,
                   ),
                 )
-              : _Groups(ops: ops, expanded: expanded, onToggle: onToggle),
+              : _Groups(
+                  ops: ops,
+                  expanded: expanded,
+                  onToggle: onToggle,
+                  direction: opsSort,
+                ),
         ),
       ],
     );
@@ -89,11 +145,13 @@ class _Groups extends ConsumerWidget {
   final List<PlannedOp> ops;
   final Set<OpCategory> expanded;
   final ValueChanged<OpCategory> onToggle;
+  final AmountSort direction;
 
   const _Groups({
     required this.ops,
     required this.expanded,
     required this.onToggle,
+    required this.direction,
   });
 
   @override
@@ -104,41 +162,59 @@ class _Groups extends ConsumerWidget {
     bool inScenario(PlannedOp op) =>
         scenario == null || scenario.allowsOp(op.id);
 
-    // Enum declaration order drives the section order, so it is stable across
-    // rebuilds regardless of how the rows came back from the database.
+    // Enum declaration order is where the sort starts from and what it falls
+    // back to between equal amounts, so the sections stay put across rebuilds
+    // regardless of how the rows came back from the database.
     final grouped = <OpCategory, List<PlannedOp>>{};
-    for (final op in ops) {
-      grouped.putIfAbsent(op.category, () => []).add(op);
+    for (final category in OpCategory.values) {
+      final inCategory = ops.where((op) => op.category == category);
+      if (inCategory.isEmpty) continue;
+      grouped[category] = sortOps(
+        inCategory,
+        rates: rates,
+        baseCurrency: baseCurrency,
+        direction: direction,
+      );
     }
+    // Scenario-filtered, like the total and the forecast card above: an
+    // estimate counting operations the forecast deliberately leaves out would
+    // silently disagree with them.
+    final totals = {
+      for (final MapEntry(key: category, value: categoryOps) in grouped.entries)
+        category: monthlyTotal(
+          ops: categoryOps.where(inScenario),
+          rates: rates,
+          baseCurrency: baseCurrency,
+          today: DateTime.now(),
+        ),
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final category in OpCategory.values)
-          if (grouped[category] != null) ...[
-            _GroupHeader(
-              category: category,
-              // Scenario-filtered, like the total and the forecast card above:
-              // an estimate counting operations the forecast deliberately
-              // leaves out would silently disagree with them.
-              ops: grouped[category]!.where(inScenario).toList(),
-              expanded: expanded.contains(category),
-              onToggle: () => onToggle(category),
-              rates: rates,
-              baseCurrency: baseCurrency,
-            ),
-            if (expanded.contains(category))
-              for (final op in grouped[category]!)
-                _OpTile(
-                  op: op,
-                  rates: rates,
-                  baseCurrency: baseCurrency,
-                  // Marked rather than hidden, exactly as `AccountCard` marks
-                  // an excluded account: the row still needs editing, it just
-                  // must not look like it is part of the figures.
-                  excluded: !inScenario(op),
-                ),
-          ],
+        for (final category in sortCategories(
+          totals,
+          direction: direction,
+        )) ...[
+          _GroupHeader(
+            category: category,
+            total: totals[category]!,
+            expanded: expanded.contains(category),
+            onToggle: () => onToggle(category),
+            baseCurrency: baseCurrency,
+          ),
+          if (expanded.contains(category))
+            for (final op in grouped[category]!)
+              _OpTile(
+                op: op,
+                rates: rates,
+                baseCurrency: baseCurrency,
+                // Marked rather than hidden, exactly as `AccountCard` marks
+                // an excluded account: the row still needs editing, it just
+                // must not look like it is part of the figures.
+                excluded: !inScenario(op),
+              ),
+        ],
       ],
     );
   }
@@ -147,19 +223,18 @@ class _Groups extends ConsumerWidget {
 class _GroupHeader extends StatelessWidget {
   final OpCategory category;
 
-  /// The group's operations, already filtered by the active scenario.
-  final List<PlannedOp> ops;
+  /// The group's monthly estimate, over the operations the active scenario
+  /// keeps.
+  final MonthlyTotal total;
   final bool expanded;
   final VoidCallback onToggle;
-  final RateTable rates;
   final String baseCurrency;
 
   const _GroupHeader({
     required this.category,
-    required this.ops,
+    required this.total,
     required this.expanded,
     required this.onToggle,
-    required this.rates,
     required this.baseCurrency,
   });
 
@@ -199,7 +274,10 @@ class _GroupHeader extends StatelessWidget {
                   // Only while collapsed: with the operations in view their own
                   // amounts say it better than an average does.
                   if (!expanded)
-                    Text(_monthlyLabel(), style: theme.textTheme.bodySmall),
+                    Text(
+                      monthlyLabel(total, baseCurrency),
+                      style: theme.textTheme.bodySmall,
+                    ),
                 ],
               ),
             ),
@@ -210,31 +288,24 @@ class _GroupHeader extends StatelessWidget {
       ),
     );
   }
+}
 
-  /// «−42 000 ₽ / мес»: every operation of the group brought to a monthly
-  /// equivalent and summed with its sign. Kopecks are dropped — an estimate
-  /// built from "4.35 weeks a month" has no business showing them.
-  String _monthlyLabel() {
-    final total = monthlyTotal(
-      ops: ops,
-      rates: rates,
-      baseCurrency: baseCurrency,
-      today: DateTime.now(),
-    );
-    final sign = total.amountMinor > 0
-        ? '+'
-        : total.amountMinor < 0
-        ? '−'
-        : '';
-    final amount = formatMoneyCompact(total.amountMinor.abs(), baseCurrency);
-    // A missing rate first: it is the half the user can go and fix.
-    final suffix = total.missingRate
-        ? ' · нет курса'
-        : total.unconvertible
-        ? ' · слишком большая сумма'
-        : '';
-    return '$sign$amount / мес$suffix';
-  }
+/// «−42 000 ₽ / мес»: a monthly estimate with its sign. Kopecks are dropped —
+/// an estimate built from "4.35 weeks a month" has no business showing them.
+String monthlyLabel(MonthlyTotal total, String baseCurrency) {
+  final sign = total.amountMinor > 0
+      ? '+'
+      : total.amountMinor < 0
+      ? '−'
+      : '';
+  final amount = formatMoneyCompact(total.amountMinor.abs(), baseCurrency);
+  // A missing rate first: it is the half the user can go and fix.
+  final suffix = total.missingRate
+      ? ' · нет курса'
+      : total.unconvertible
+      ? ' · слишком большая сумма'
+      : '';
+  return '$sign$amount / мес$suffix';
 }
 
 class _OpTile extends ConsumerWidget {

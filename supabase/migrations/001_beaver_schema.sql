@@ -37,12 +37,17 @@ CREATE TABLE IF NOT EXISTS user_settings (
   )),
   -- Only meaningful for forecast_preset = 'custom'.
   forecast_custom_date DATE,
+  -- Direction of the by-amount sort of the accounts and of the operations on
+  -- the home screen. Stored so it follows the user to another device.
+  accounts_sort TEXT NOT NULL DEFAULT 'desc'
+    CHECK (accounts_sort IN ('asc', 'desc')),
+  ops_sort TEXT NOT NULL DEFAULT 'desc' CHECK (ops_sort IN ('asc', 'desc')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- `CREATE TABLE IF NOT EXISTS` above is a no-op on an already deployed database,
--- so the horizon columns are added separately for it.
+-- so the horizon and sort columns are added separately for it.
 ALTER TABLE user_settings
   ADD COLUMN IF NOT EXISTS forecast_preset TEXT NOT NULL DEFAULT 'plus30';
 ALTER TABLE user_settings
@@ -53,6 +58,18 @@ ALTER TABLE user_settings
   ADD CONSTRAINT user_settings_forecast_preset_check CHECK (forecast_preset IN (
     'end_of_month', 'plus30', 'plus90', 'custom'
   ));
+ALTER TABLE user_settings
+  ADD COLUMN IF NOT EXISTS accounts_sort TEXT NOT NULL DEFAULT 'desc';
+ALTER TABLE user_settings
+  ADD COLUMN IF NOT EXISTS ops_sort TEXT NOT NULL DEFAULT 'desc';
+ALTER TABLE user_settings
+  DROP CONSTRAINT IF EXISTS user_settings_accounts_sort_check;
+ALTER TABLE user_settings
+  ADD CONSTRAINT user_settings_accounts_sort_check
+    CHECK (accounts_sort IN ('asc', 'desc'));
+ALTER TABLE user_settings DROP CONSTRAINT IF EXISTS user_settings_ops_sort_check;
+ALTER TABLE user_settings
+  ADD CONSTRAINT user_settings_ops_sort_check CHECK (ops_sort IN ('asc', 'desc'));
 
 -- Redundant next to the primary key, but kept so every table in this migration
 -- is indexed by user_id the same way.

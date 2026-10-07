@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/models/forecast_horizon.dart';
+import '../../domain/models/amount_sort.dart';
 import '../../domain/models/user_settings.dart';
 import '../../domain/repositories/settings_repository.dart';
 import 'date_wire.dart';
@@ -36,6 +37,8 @@ class SupabaseSettingsRepository implements SettingsRepository {
     'forecast_custom_date': settings.forecastCustomDate == null
         ? null
         : dateToWire(settings.forecastCustomDate!),
+    'accounts_sort': settings.accountsSort.wire,
+    'ops_sort': settings.opsSort.wire,
   };
 
   UserSettings _toEntity(Map<String, dynamic> json) => UserSettings(
@@ -47,5 +50,7 @@ class SupabaseSettingsRepository implements SettingsRepository {
     forecastCustomDate: json['forecast_custom_date'] == null
         ? null
         : dateFromWire(json['forecast_custom_date'] as String),
+    accountsSort: AmountSort.fromWire(json['accounts_sort'] as String?),
+    opsSort: AmountSort.fromWire(json['ops_sort'] as String?),
   );
 }
