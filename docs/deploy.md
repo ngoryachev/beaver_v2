@@ -5,6 +5,18 @@ priority-lists, и пользуется той же базой Supabase. Отд�
 Beaver — это статическая web-сборка в подпути `/beaver/` плюс свои таблицы в
 существующей базе.
 
+## Автодеплой
+
+Каждый push в `main` запускает `.github/workflows/ci.yml`: `flutter analyze`,
+`flutter test` и `test/sql/migration_test.sh`. Если всё прошло, job `deploy`
+применяет на VPS все миграции из `supabase/migrations/` (они идемпотентны),
+просит PostgREST перечитать схему и заливает web-сборку в `/opt/beaver/web`.
+
+Секреты репозитория: `VPS_SSH_KEY`, `VPS_HOST`, `VPS_USER`, `SUPABASE_URL`,
+`SUPABASE_ANON_KEY` — те же значения, что у priority-lists.
+
+Шаги ниже — то же самое вручную.
+
 ## 1. Секреты
 
 ```bash
