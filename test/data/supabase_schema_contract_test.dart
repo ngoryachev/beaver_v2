@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:beaver_v2/domain/models/amount_sort.dart';
 import 'package:beaver_v2/domain/models/forecast_horizon.dart';
 import 'package:beaver_v2/domain/models/planned_op.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,7 +113,12 @@ void main() {
     // parser below only reads the CREATE TABLE, which is why the ALTER is
     // checked as text — `test/sql/migration_test.sh` is what actually applies
     // the file twice.
-    for (final column in const ['forecast_preset', 'forecast_custom_date']) {
+    for (final column in const [
+      'forecast_preset',
+      'forecast_custom_date',
+      'accounts_sort',
+      'ops_sort',
+    ]) {
       test('user_settings declares $column', () {
         expect(tables['user_settings']!.keys, contains(column));
       });
@@ -179,6 +185,18 @@ void main() {
         );
       }
     });
+
+    for (final column in const ['accounts_sort', 'ops_sort']) {
+      test('user_settings.$column', () {
+        for (final direction in AmountSort.values) {
+          expect(
+            tables['user_settings']![column],
+            contains("'${direction.wire}'"),
+            reason: '$column rejects "${direction.wire}", which the app writes',
+          );
+        }
+      });
+    }
   });
 
   group('the transfer RPC', () {

@@ -4,6 +4,7 @@ import 'package:beaver_v2/data/in_memory/in_memory_rates_repository.dart';
 import 'package:beaver_v2/data/in_memory/in_memory_scenarios_repository.dart';
 import 'package:beaver_v2/data/in_memory/in_memory_settings_repository.dart';
 import 'package:beaver_v2/domain/models/account.dart';
+import 'package:beaver_v2/domain/models/amount_sort.dart';
 import 'package:beaver_v2/domain/models/planned_op.dart';
 import 'package:beaver_v2/domain/models/rate.dart';
 import 'package:beaver_v2/domain/models/scenario.dart';
@@ -62,6 +63,7 @@ Future<InMemoryPlannedOpsRepository> _pumpHome(
   Size size = const Size(1200, 3000),
   List<Scenario>? scenarios,
   String? activeScenarioId,
+  InMemorySettingsRepository? settings,
 }) async {
   final repository = InMemoryPlannedOpsRepository(ops);
   tester.view.physicalSize = size;
@@ -103,9 +105,10 @@ Future<InMemoryPlannedOpsRepository> _pumpHome(
           InMemoryRatesRepository(rates),
         ),
         settingsRepositoryProvider.overrideWithValue(
-          InMemorySettingsRepository(
-            const UserSettings(userId: _userId, baseCurrency: 'RUB'),
-          ),
+          settings ??
+              InMemorySettingsRepository(
+                const UserSettings(userId: _userId, baseCurrency: 'RUB'),
+              ),
         ),
       ],
       child: const MaterialApp(home: HomeScreen()),
@@ -114,6 +117,14 @@ Future<InMemoryPlannedOpsRepository> _pumpHome(
   await tester.pumpAndSettle();
   return repository;
 }
+
+/// Text inside a category header only. The section title above the groups
+/// carries the same kind of «… / мес» line for all operations, which with a
+/// single category reads exactly like that category's own.
+Finder _headerEstimate(String text) => find.descendant(
+  of: find.byType(InkWell),
+  matching: find.textContaining(text),
+);
 
 Future<void> _expand(WidgetTester tester, String category) async {
   await tester.tap(find.text(category));
@@ -203,10 +214,9 @@ void main() {
     expect(find.text('Продукты'), findsNothing);
   });
 
-  testWidgets('operations are grouped by category in enum order', (
-    tester,
-  ) async {
-    await _pumpHome(tester, [
+  group('sorting by amount', () {
+    // Monthly: salary +200 000, housing −40 000, food −15 000 − 3 000.
+    final ops = [
       _op(
         id: 'o1',
         title: 'Зарплата',
@@ -214,34 +224,192 @@ void main() {
         category: OpCategory.salary,
         kind: OpKind.income,
       ),
+      _op(id: 'o2', title: 'Кафе', amount: 300000, category: OpCategory.food),
       _op(
-        id: 'o2',
-        title: 'Продукты',
-        amount: 1500000,
-        category: OpCategory.food,
-      ),
-      _op(id: 'o3', title: 'Кафе', amount: 300000, category: OpCategory.food),
-      _op(
-        id: 'o4',
+        id: 'o3',
         title: 'Квартира',
         amount: 4000000,
         category: OpCategory.housing,
       ),
-    ]);
+      _op(
+        id: 'o4',
+        title: 'Продукты',
+        amount: 1500000,
+        category: OpCategory.food,
+      ),
+    ];
 
-    // «Еда» is declared before «Квартплата», which is declared before
-    // «Зарплата», whatever order the repository returned the rows in.
-    final foodY = tester.getTopLeft(find.text('Еда')).dy;
-    final housingY = tester.getTopLeft(find.text('Квартплата')).dy;
-    final salaryY = tester.getTopLeft(find.text('Зарплата')).dy;
-    expect(foodY, lessThan(housingY));
-    expect(housingY, lessThan(salaryY));
+    double y(WidgetTester tester, String text) =>
+        tester.getTopLeft(find.text(text)).dy;
 
-    // Both food operations sit under the single «Еда» heading.
-    await _expand(tester, 'Еда');
-    expect(find.text('Еда'), findsOneWidget);
-    expect(find.text('Продукты'), findsOneWidget);
-    expect(find.text('Кафе'), findsOneWidget);
+    testWidgets('puts the largest category and operation first by default', (
+      tester,
+    ) async {
+      await _pumpHome(tester, ops);
+
+      // By magnitude: the income is the largest figure, whatever its sign.
+      expect(y(tester, 'Зарплата'), lessThan(y(tester, 'Квартплата')));
+      expect(y(tester, 'Квартплата'), lessThan(y(tester, 'Еда')));
+
+      // Both food operations sit under the single «Еда» heading, larger first.
+      await _expand(tester, 'Еда');
+      expect(find.text('Еда'), findsOneWidget);
+      expect(y(tester, 'Продукты'), lessThan(y(tester, 'Кафе')));
+    });
+
+    testWidgets('the button flips the order and stores the choice', (
+      tester,
+    ) async {
+      final settings = InMemorySettingsRepository(
+        const UserSettings(userId: _userId, baseCurrency: 'RUB'),
+      );
+      await _pumpHome(tester, ops, settings: settings);
+
+      await tester.tap(find.byTooltip('По убыванию суммы'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('По возрастанию суммы'), findsOneWidget);
+      expect(y(tester, 'Еда'), lessThan(y(tester, 'Квартплата')));
+      expect(y(tester, 'Квартплата'), lessThan(y(tester, 'Зарплата')));
+      await _expand(tester, 'Еда');
+      expect(y(tester, 'Кафе'), lessThan(y(tester, 'Продукты')));
+
+      expect((await settings.get())!.opsSort, AmountSort.asc);
+    });
+
+    testWidgets('a stored ascending order is picked up on start', (
+      tester,
+    ) async {
+      await _pumpHome(
+        tester,
+        ops,
+        settings: InMemorySettingsRepository(
+          const UserSettings(
+            userId: _userId,
+            baseCurrency: 'RUB',
+            opsSort: AmountSort.asc,
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('По возрастанию суммы'), findsOneWidget);
+      expect(y(tester, 'Еда'), lessThan(y(tester, 'Зарплата')));
+    });
+
+    testWidgets('equal amounts keep the declaration order', (tester) async {
+      await _pumpHome(tester, [
+        _op(
+          id: 'o1',
+          title: 'Врач',
+          amount: 100000,
+          category: OpCategory.health,
+        ),
+        _op(id: 'o2', title: 'Обед', amount: 100000, category: OpCategory.food),
+      ]);
+
+      // «Еда» is declared before «Здоровье».
+      expect(y(tester, 'Еда'), lessThan(y(tester, 'Здоровье')));
+    });
+
+    testWidgets('a single operation gets no sort button', (tester) async {
+      await _pumpHome(tester, [ops.first]);
+
+      expect(
+        find.byType(IconButton).evaluate().where((element) {
+          final tooltip = (element.widget as IconButton).tooltip ?? '';
+          return tooltip.contains('суммы');
+        }),
+        isEmpty,
+      );
+    });
+  });
+
+  group('the total under «Операции»', () {
+    testWidgets('sums every category per month', (tester) async {
+      await _pumpHome(tester, [
+        _op(
+          id: 'o1',
+          title: 'Зарплата',
+          amount: 20000000,
+          category: OpCategory.salary,
+          kind: OpKind.income,
+        ),
+        _op(
+          id: 'o2',
+          title: 'Квартира',
+          amount: 4000000,
+          category: OpCategory.housing,
+        ),
+      ]);
+
+      // +200 000 − 40 000, outside any category header.
+      final total = find.textContaining(
+        '+${formatMoneyCompact(16000000, 'RUB')} / мес',
+      );
+      expect(total, findsOneWidget);
+      expect(
+        find.descendant(of: find.byType(InkWell), matching: total),
+        findsNothing,
+      );
+    });
+
+    testWidgets('stays when a category is expanded', (tester) async {
+      await _pumpHome(tester, [
+        _op(
+          id: 'o1',
+          title: 'Продукты',
+          amount: 1500000,
+          category: OpCategory.food,
+        ),
+      ]);
+      await _expand(tester, 'Еда');
+
+      expect(
+        find.textContaining('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('leaves out what the active scenario excludes', (tester) async {
+      await _pumpHome(
+        tester,
+        [
+          _op(
+            id: 'o1',
+            title: 'Продукты',
+            amount: 1500000,
+            category: OpCategory.food,
+          ),
+          _op(
+            id: 'o2',
+            title: 'Квартира',
+            amount: 4000000,
+            category: OpCategory.housing,
+          ),
+        ],
+        scenarios: [
+          Scenario(id: 's1', userId: _userId, name: 'Все', isDefault: true),
+          Scenario(
+            id: 's2',
+            userId: _userId,
+            name: 'Без квартиры',
+            disabledOpIds: const {'o2'},
+          ),
+        ],
+        activeScenarioId: 's2',
+      );
+
+      // The food group's own estimate and the total are both 15 000 ₽ now.
+      expect(
+        find.textContaining('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
+        findsNWidgets(2),
+      );
+    });
+
+    testWidgets('is absent while there are no operations', (tester) async {
+      await _pumpHome(tester, const []);
+      expect(find.textContaining('/ мес'), findsNothing);
+    });
   });
 
   group('the collapsed monthly estimate', () {
@@ -266,12 +434,12 @@ void main() {
       ]);
 
       expect(
-        find.textContaining('−${formatMoneyCompact(1935000, 'RUB')} / мес'),
+        _headerEstimate('−${formatMoneyCompact(1935000, 'RUB')} / мес'),
         findsOneWidget,
       );
 
       await _expand(tester, 'Еда');
-      expect(find.textContaining('/ мес'), findsNothing);
+      expect(_headerEstimate('/ мес'), findsNothing);
     });
 
     testWidgets('an income group is signed the other way', (tester) async {
@@ -286,7 +454,7 @@ void main() {
       ]);
 
       expect(
-        find.textContaining('+${formatMoneyCompact(20000000, 'RUB')} / мес'),
+        _headerEstimate('+${formatMoneyCompact(20000000, 'RUB')} / мес'),
         findsOneWidget,
       );
     });
@@ -311,7 +479,7 @@ void main() {
       ]);
 
       expect(
-        find.textContaining('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
+        _headerEstimate('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
         findsOneWidget,
       );
     });
@@ -327,7 +495,7 @@ void main() {
         ),
       ]);
 
-      expect(find.textContaining('нет курса'), findsOneWidget);
+      expect(_headerEstimate('нет курса'), findsOneWidget);
     });
   });
 
@@ -368,7 +536,7 @@ void main() {
 
       // 15 000 ₽ only: «Кафе» is not part of this scenario.
       expect(
-        find.textContaining('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
+        _headerEstimate('−${formatMoneyCompact(1500000, 'RUB')} / мес'),
         findsOneWidget,
       );
 
@@ -393,7 +561,7 @@ void main() {
       ]);
 
       expect(
-        find.textContaining('−${formatMoneyCompact(2000000, 'RUB')} / мес'),
+        _headerEstimate('−${formatMoneyCompact(2000000, 'RUB')} / мес'),
         findsOneWidget,
       );
 
@@ -560,7 +728,7 @@ void main() {
       size: const Size(390, 844),
     );
 
-    expect(find.textContaining('нет курса'), findsOneWidget);
+    expect(_headerEstimate('нет курса'), findsOneWidget);
     expect(
       tester.takeException(),
       isNull,
@@ -597,7 +765,7 @@ void main() {
     );
 
     expect(find.text('Коммунальные платежи'), findsOneWidget);
-    expect(find.textContaining('нет курса'), findsOneWidget);
+    expect(_headerEstimate('нет курса'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -620,8 +788,8 @@ void main() {
       rates: [_rate('RUB', 90), _rate('XYZ', 1e-300)],
     );
 
-    expect(find.textContaining('слишком большая сумма'), findsOneWidget);
-    expect(find.textContaining('нет курса'), findsNothing);
+    expect(_headerEstimate('слишком большая сумма'), findsOneWidget);
+    expect(_headerEstimate('нет курса'), findsNothing);
   });
 
   group('swipe to delete', () {

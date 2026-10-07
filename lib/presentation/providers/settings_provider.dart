@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/forecast_horizon.dart';
+import '../../domain/models/amount_sort.dart';
 import '../../domain/models/user_settings.dart';
 import '../../domain/projection/project_balance.dart';
 import 'accounts_provider.dart';
@@ -34,6 +35,12 @@ class SettingsNotifier extends AsyncNotifier<UserSettings?> {
       forecastCustomDate: horizon.customDate,
     ),
   );
+
+  Future<void> setAccountsSort(AmountSort direction) =>
+      _update((settings) => settings.copyWith(accountsSort: direction));
+
+  Future<void> setOpsSort(AmountSort direction) =>
+      _update((settings) => settings.copyWith(opsSort: direction));
 
   /// Saves one changed field of the row.
   ///
@@ -71,3 +78,14 @@ final baseCurrencyOptionsProvider = Provider<List<String>>((ref) {
   final accounts = ref.watch(accountsProvider).valueOrNull ?? const [];
   return baseCurrencyCandidates(accounts);
 });
+
+/// Direction of the by-amount sort of the accounts on the home screen.
+final accountsSortProvider = Provider<AmountSort>(
+  (ref) =>
+      ref.watch(settingsProvider).valueOrNull?.accountsSort ?? AmountSort.desc,
+);
+
+/// Direction of the by-amount sort of the operations on the home screen.
+final opsSortProvider = Provider<AmountSort>(
+  (ref) => ref.watch(settingsProvider).valueOrNull?.opsSort ?? AmountSort.desc,
+);

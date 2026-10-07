@@ -107,6 +107,8 @@ ALTER TABLE planned_ops ADD CONSTRAINT planned_ops_schedule_check CHECK (
   schedule IN ('once','daily','weekly','monthly','yearly'));
 ALTER TABLE user_settings DROP COLUMN forecast_preset;
 ALTER TABLE user_settings DROP COLUMN forecast_custom_date;
+ALTER TABLE user_settings DROP COLUMN accounts_sort;
+ALTER TABLE user_settings DROP COLUMN ops_sort;
 INSERT INTO auth.users(id) VALUES ('11111111-1111-1111-1111-111111111111');
 INSERT INTO user_settings(user_id, base_currency)
   VALUES ('11111111-1111-1111-1111-111111111111', 'EUR');
@@ -132,6 +134,16 @@ if psql_upgrade -v ON_ERROR_STOP=1 -q -c "UPDATE user_settings SET forecast_pres
 else
   echo "  ok: мусорный forecast_preset отклонён"
 fi
+check "старая строка настроек получила сортировку по умолчанию" "desc|desc" \
+  "$(psql_upgrade -qtAX -c "SELECT accounts_sort || '|' || ops_sort FROM user_settings")"
+for column in accounts_sort ops_sort; do
+  if psql_upgrade -v ON_ERROR_STOP=1 -q -c "UPDATE user_settings SET $column='sideways'" >/dev/null 2>&1; then
+    echo "  FAIL: $column без CHECK на развёрнутой базе" >&2
+    failures=$((failures + 1))
+  else
+    echo "  ok: мусорный $column отклонён"
+  fi
+done
 
 psql_file -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO auth.users(id) VALUES
