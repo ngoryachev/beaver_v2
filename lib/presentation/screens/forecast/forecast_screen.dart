@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/models/forecast_horizon.dart';
 import '../../../domain/models/planned_op.dart';
+import '../../../domain/projection/event_groups.dart';
 import '../../../domain/projection/occurrences.dart';
 import '../../../domain/projection/project_balance.dart';
 import '../../format/money_format.dart';
@@ -65,6 +66,9 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
     final horizon = ref.watch(forecastHorizonProvider);
     final targetDate = ref.watch(forecastTargetDateProvider);
     final projection = ref.watch(projectionProvider(targetDate));
+    // One pass over the events, no widgets: the list below is still built
+    // lazily, now over the groups.
+    final eventGroups = groupConsecutiveEvents(projection.events);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Прогноз')),
@@ -221,7 +225,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
               ),
             ]),
           ),
-          if (projection.events.isEmpty)
+          if (eventGroups.isEmpty)
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -232,15 +236,18 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
               ),
             )
           else
-            // Built on demand: a custom date years out over a daily operation
-            // runs to thousands of events, and a child list would build every
-            // tile on every rebuild of the screen.
+            // Built on demand: folding the daily runs away does not bound
+            // the list — a custom date years out over weekly or monthly
+            // operations still runs to hundreds of groups, and a child list
+            // would build every tile on every rebuild of the screen.
             SliverList.builder(
-              itemCount: projection.events.length,
-              itemBuilder: (context, index) => _EventTile(
-                event: projection.events[index],
-                baseCurrency: baseCurrency,
-              ),
+              itemCount: eventGroups.length,
+              itemBuilder: (context, index) {
+                final group = eventGroups[index];
+                return group.count >= 2
+                    ? _EventGroupTile(group: group, baseCurrency: baseCurrency)
+                    : _EventTile(group: group, baseCurrency: baseCurrency);
+              },
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
@@ -444,25 +451,25 @@ double _niceStep(double range) {
   return magnitude * 10;
 }
 
+/// One occurrence on one date. A [ProjectionEventGroup] of a single day renders
+/// exactly as a bare event always did.
 class _EventTile extends StatelessWidget {
-  final ProjectionEvent event;
+  final ProjectionEventGroup group;
   final String baseCurrency;
 
-  const _EventTile({required this.event, required this.baseCurrency});
+  const _EventTile({required this.group, required this.baseCurrency});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final op = event.op;
+    final op = group.op;
     final isIncome = op.kind == OpKind.income;
-    final ownCurrency =
-        op.currencyCode.toUpperCase() != baseCurrency.toUpperCase();
 
     return ListTile(
       dense: true,
       leading: Icon(categoryIcon(op.category), size: 20),
       title: Text(op.title),
-      subtitle: Text(formatDayMonth(event.date)),
+      subtitle: Text(formatDayMonth(group.firstDate)),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -474,11 +481,11 @@ class _EventTile extends StatelessWidget {
               color: isIncome ? Colors.green.shade700 : theme.colorScheme.error,
             ),
           ),
-          if (ownCurrency)
+          if (_showsBaseEquivalent(op.currencyCode, baseCurrency))
             Text(
-              event.baseAmountMinor == null
+              group.baseAmountMinor == null
                   ? 'нет курса'
-                  : '≈ ${formatMoney(event.baseAmountMinor!.abs(), baseCurrency)}',
+                  : '≈ ${formatMoney(group.baseAmountMinor!.abs(), baseCurrency)}',
               style: theme.textTheme.bodySmall,
             ),
         ],
@@ -486,3 +493,58 @@ class _EventTile extends StatelessWidget {
     );
   }
 }
+
+/// A run of consecutive days folded into one row: «Кофе · 14–20 ноября ·
+/// 7 дн. × −50 ₽» with the run's total on the right.
+///
+/// Static by design — the per-day amount, the day count and the total already
+/// say everything the individual rows did.
+class _EventGroupTile extends StatelessWidget {
+  final ProjectionEventGroup group;
+  final String baseCurrency;
+
+  const _EventGroupTile({required this.group, required this.baseCurrency});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final op = group.op;
+    final isIncome = op.kind == OpKind.income;
+    final sign = isIncome ? '+' : '−';
+    final totalBase = group.totalBaseAmountMinor;
+
+    return ListTile(
+      dense: true,
+      leading: Icon(categoryIcon(op.category), size: 20),
+      title: Text(op.title),
+      subtitle: Text(
+        '${formatDayMonthRange(group.firstDate, group.lastDate)} · '
+        '${group.count} дн. × $sign${formatMoney(op.amount, op.currencyCode)}',
+      ),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            '$sign${formatMoney(group.totalAmountMinor.abs(), op.currencyCode)}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: isIncome ? Colors.green.shade700 : theme.colorScheme.error,
+            ),
+          ),
+          if (_showsBaseEquivalent(op.currencyCode, baseCurrency))
+            Text(
+              totalBase == null
+                  ? 'нет курса'
+                  : '≈ ${formatMoney(totalBase.abs(), baseCurrency)}',
+              style: theme.textTheme.bodySmall,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Whether a row needs the base-currency line: only when the operation is not
+/// already written in the base currency.
+bool _showsBaseEquivalent(String opCurrency, String baseCurrency) =>
+    opCurrency.toUpperCase() != baseCurrency.toUpperCase();

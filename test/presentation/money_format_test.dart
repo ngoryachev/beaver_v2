@@ -84,6 +84,36 @@ void main() {
     });
   });
 
+  group('formatDayMonthRange', () {
+    test('writes the month once when both ends share it', () {
+      expect(
+        formatDayMonthRange(DateTime(2026, 11, 14), DateTime(2026, 11, 20)),
+        '14–20 ноября',
+      );
+    });
+
+    test('names both months across a boundary', () {
+      expect(
+        formatDayMonthRange(DateTime(2026, 11, 28), DateTime(2026, 12, 3)),
+        '28 ноября – 3 декабря',
+      );
+    });
+
+    test('falls back to full dates across a year', () {
+      expect(
+        formatDayMonthRange(DateTime(2026, 12, 28), DateTime(2027, 1, 3)),
+        '28.12.2026 – 03.01.2027',
+      );
+    });
+
+    test('a one-day range reads as a single day repeated', () {
+      expect(
+        formatDayMonthRange(DateTime(2026, 5, 7), DateTime(2026, 5, 7)),
+        '7–7 мая',
+      );
+    });
+  });
+
   group('formatRate', () {
     test('trims the API noise on a large rate', () {
       expect(formatRate(84.38308093), '84,3831');
