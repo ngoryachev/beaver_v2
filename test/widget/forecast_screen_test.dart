@@ -514,4 +514,156 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('collapsed rows against the rest of the screen', () {
+    testWidgets('a two-day run is already collapsed', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [
+          PlannedOp(
+            id: 'o1',
+            userId: _userId,
+            title: 'Еда',
+            amount: 5000,
+            currencyCode: 'RUB',
+            kind: OpKind.expense,
+            schedule: Schedule.daily,
+            startDate: _today,
+            // Today and tomorrow: the shortest run the screen folds.
+            endDate: addDays(_today, 1),
+          ),
+        ],
+      );
+
+      expect(find.text('Еда'), findsOneWidget);
+      expect(
+        find.textContaining('2 дн. × −${formatMoney(5000, 'RUB')}'),
+        findsOneWidget,
+      );
+      expect(find.text('−${formatMoney(2 * 5000, 'RUB')}'), findsOneWidget);
+      // Not two plain rows dated today and tomorrow.
+      expect(find.text(formatDayMonth(_today)), findsNothing);
+    });
+
+    testWidgets('another operation inside the run keeps its own dated row', (
+      tester,
+    ) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 10000000)],
+        ops: [
+          _op(id: 'o1', title: 'Еда', amount: 5000),
+          _op(
+            id: 'o2',
+            title: 'Страховка',
+            amount: 450000,
+            schedule: Schedule.once,
+            startDate: addDays(_today, 5),
+          ),
+        ],
+      );
+
+      // The run is folded; the one-off is not, and still carries its date.
+      expect(find.text('Еда'), findsOneWidget);
+      expect(
+        find.textContaining(
+          '${formatDayMonthRange(_today, addDays(_today, 30))} · 31 дн.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Страховка'), findsOneWidget);
+      expect(find.text(formatDayMonth(addDays(_today, 5))), findsOneWidget);
+      expect(find.text('−${formatMoney(450000, 'RUB')}'), findsOneWidget);
+    });
+
+    testWidgets('the collapsed total agrees with the horizon balance', (
+      tester,
+    ) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [_op(id: 'o1', title: 'Кофе', amount: 10000)],
+      );
+
+      // 31 × 100 ₽ comes off a 10 000 ₽ balance: the row's total and the
+      // summary have to tell the same story, which is the whole point of
+      // keeping the projection untouched.
+      expect(find.text('−${formatMoney(31 * 10000, 'RUB')}'), findsOneWidget);
+      expect(
+        find.text(formatMoney(1000000 - 31 * 10000, 'RUB')),
+        findsWidgets,
+      );
+      expect(find.byType(LineChart), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a one-off operation shows no day count', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [
+          _op(
+            id: 'o1',
+            title: 'Страховка',
+            amount: 450000,
+            schedule: Schedule.once,
+            startDate: addDays(_today, 5),
+          ),
+        ],
+      );
+
+      expect(find.textContaining('дн. ×'), findsNothing);
+      expect(find.textContaining('–'), findsNothing);
+      expect(find.text(formatDayMonth(addDays(_today, 5))), findsOneWidget);
+    });
+  });
+
+  group('the collapsed row on a phone-sized screen', () {
+    testWidgets('a long title and a foreign currency still lay out', (
+      tester,
+    ) async {
+      // The folded subtitle is much longer than the single date it replaced:
+      // on a 360 dp phone it has to wrap rather than overflow the tile.
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 100000000)],
+        ops: [
+          _op(
+            id: 'o1',
+            title: 'Обед в столовой на работе',
+            amount: 1500,
+            code: 'EUR',
+          ),
+        ],
+        rates: [
+          Rate(
+            userId: _userId,
+            code: 'RUB',
+            ratePerUsd: 90,
+            source: RateSource.auto,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+          Rate(
+            userId: _userId,
+            code: 'EUR',
+            ratePerUsd: 0.9,
+            source: RateSource.auto,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ],
+        viewSize: const Size(360, 640),
+      );
+
+      await tester.scrollUntilVisible(
+        find.text('Обед в столовой на работе'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Обед в столовой на работе'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
