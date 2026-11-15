@@ -60,8 +60,9 @@ Future<void> _pumpForecast(
   List<PlannedOp> ops = const [],
   List<Rate> rates = const [],
   String baseCurrency = 'RUB',
+  Size viewSize = const Size(1200, 3200),
 }) async {
-  tester.view.physicalSize = const Size(1200, 3200);
+  tester.view.physicalSize = viewSize;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -231,6 +232,127 @@ void main() {
       expect(find.text(formatDayMonth(addDays(_today, 5))), findsOneWidget);
     });
 
+    testWidgets('a daily operation collapses into a single ranged row', (
+      tester,
+    ) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [_op(id: 'o1', title: 'Еда', amount: 5000)],
+      );
+
+      // Thirty-one identical rows would be the whole screen; one row carries
+      // the same information.
+      expect(find.text('Еда'), findsOneWidget);
+      expect(
+        find.text(
+          '${formatDayMonthRange(_today, addDays(_today, 30))} · '
+          '31 дн. × −${formatMoney(5000, 'RUB')}',
+        ),
+        findsOneWidget,
+      );
+      // The trailing amount is the run's total, not one day's.
+      expect(find.text('−${formatMoney(31 * 5000, 'RUB')}'), findsOneWidget);
+      expect(find.text('−${formatMoney(5000, 'RUB')}'), findsNothing);
+    });
+
+    testWidgets('a grouped row is not tappable', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [_op(id: 'o1', title: 'Еда', amount: 5000)],
+      );
+
+      final tile = tester.widget<ListTile>(
+        find.ancestor(of: find.text('Еда'), matching: find.byType(ListTile)),
+      );
+      expect(tile.onTap, isNull);
+    });
+
+    testWidgets('a grouped income row keeps the plus sign', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [
+          _op(
+            id: 'o1',
+            title: 'Подработка',
+            amount: 30000,
+            kind: OpKind.income,
+          ),
+        ],
+      );
+
+      expect(
+        find.textContaining('31 дн. × +${formatMoney(30000, 'RUB')}'),
+        findsOneWidget,
+      );
+      expect(find.text('+${formatMoney(31 * 30000, 'RUB')}'), findsOneWidget);
+    });
+
+    testWidgets('a grouped row shows the base-currency total', (tester) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 100000000)],
+        ops: [_op(id: 'o1', title: 'Обед', amount: 1000, code: 'EUR')],
+        rates: [
+          Rate(
+            userId: _userId,
+            code: 'RUB',
+            ratePerUsd: 90,
+            source: RateSource.auto,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+          Rate(
+            userId: _userId,
+            code: 'EUR',
+            ratePerUsd: 0.9,
+            source: RateSource.auto,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ],
+      );
+
+      // 10 € → 1 000 ₽ a day, so the row's equivalent is the whole run's.
+      expect(find.text('Обед'), findsOneWidget);
+      expect(find.text('≈ ${formatMoney(31 * 100000, 'RUB')}'), findsOneWidget);
+    });
+
+    testWidgets('a grouped row in an unrated currency says «нет курса» once', (
+      tester,
+    ) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 1000000)],
+        ops: [_op(id: 'o1', title: 'Отель', amount: 20000, code: 'EUR')],
+      );
+
+      expect(find.text('Отель'), findsOneWidget);
+      expect(find.text('нет курса'), findsOneWidget);
+      expect(find.text('−${formatMoney(31 * 20000, 'EUR')}'), findsOneWidget);
+    });
+
+    testWidgets('a weekly operation keeps one row per occurrence', (
+      tester,
+    ) async {
+      await _pumpForecast(
+        tester,
+        accounts: [_account(id: 'a1', code: 'RUB', balance: 10000000)],
+        ops: [
+          _op(
+            id: 'o1',
+            title: 'Уборка',
+            amount: 200000,
+            schedule: Schedule.weekly,
+          ),
+        ],
+      );
+
+      // Today plus the four following weeks, none of them consecutive days.
+      expect(find.text('Уборка'), findsNWidgets(5));
+      expect(find.textContaining('дн. ×'), findsNothing);
+    });
+
     testWidgets('a disabled operation is not projected', (tester) async {
       await _pumpForecast(
         tester,
@@ -337,7 +459,7 @@ void main() {
     // construction cost, which `find` cannot observe — both delegates mount
     // only the visible tiles — so these tests guard the restructure itself:
     // the screen still renders and still scrolls all the way through.
-    testWidgets('renders its events', (tester) async {
+    testWidgets('a daily operation is one row, not ninety-one', (tester) async {
       await _pumpForecast(
         tester,
         accounts: [_account(id: 'a1', code: 'RUB', balance: 100000000)],
@@ -347,7 +469,11 @@ void main() {
       await tester.tap(find.text('+90 дней'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Кофе'), findsWidgets);
+      expect(find.text('Кофе'), findsOneWidget);
+      expect(
+        find.textContaining('91 дн. × −${formatMoney(10000, 'RUB')}'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -355,7 +481,18 @@ void main() {
       await _pumpForecast(
         tester,
         accounts: [_account(id: 'a1', code: 'RUB', balance: 100000000)],
-        ops: [_op(id: 'o1', title: 'Кофе', amount: 10000)],
+        ops: [
+          _op(id: 'o1', title: 'Кофе', amount: 10000),
+          // Weekly occurrences are seven days apart, so they stay separate
+          // rows and the list still genuinely overflows the viewport.
+          _op(
+            id: 'o2',
+            title: 'Уборка',
+            amount: 200000,
+            schedule: Schedule.weekly,
+          ),
+        ],
+        viewSize: const Size(600, 800),
       );
 
       await tester.tap(find.text('+90 дней'));
@@ -370,7 +507,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(before, greaterThan(0));
-      expect(find.text('Кофе'), findsWidgets);
+      // The list really did overflow: the collapsed daily row sat above the
+      // weekly ones and has scrolled out of the viewport.
+      expect(find.text('Кофе'), findsNothing);
+      expect(find.text('Уборка'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
   });

@@ -45,6 +45,20 @@ String formatDate(DateTime date) => DateFormat('dd.MM.yyyy', 'ru').format(date);
 /// `21 марта` — for event lists, where the year is implied.
 String formatDayMonth(DateTime date) => DateFormat('d MMMM', 'ru').format(date);
 
+/// `14–20 ноября`, `28 ноября – 3 декабря`, `28.11.2026 – 03.01.2027` — a date
+/// range for a collapsed run of events.
+///
+/// The month is written once while both ends share it, and the year appears
+/// only when the range crosses one: inside a single year the event list already
+/// implies it, exactly as [formatDayMonth] does.
+String formatDayMonthRange(DateTime from, DateTime to) {
+  if (from.year != to.year) return '${formatDate(from)} – ${formatDate(to)}';
+  // `MMMM` on its own yields the nominative «ноябрь»; borrowing the whole
+  // `d MMMM` of the closing date keeps the genitive the rest of the UI uses.
+  if (from.month == to.month) return '${from.day}–${formatDayMonth(to)}';
+  return '${formatDayMonth(from)} – ${formatDayMonth(to)}';
+}
+
 /// Formats an exchange rate for display.
 ///
 /// The APIs return eight decimal places; showing them all is noise. Small rates
